@@ -87,60 +87,102 @@ of a deep work session, this plugin is for you.
 - **Graceful degradation** — anonymous API users (no `rate_limits` field) get
   cost + model only; nothing crashes.
 - **Quietable** — set `CC_USAGE_MONITOR_QUIET=1` to silence the post-task box.
+- **One-step updates** — `/cc-usage-monitor:update` pulls the latest from GitHub.
 - **No telemetry, no network** — reads only the JSON Claude Code already pipes
-  to your statusline.
+  to your statusline (and the optional `npx ccusage` invocation in the slash
+  command, when you trigger it).
 
 ## Install
 
-### Option 1 — try it without installing
+### Option 1 — manual install (recommended)
+
+Clone the repo into a stable directory and add two lines to your Claude Code
+settings. Works on every platform, easiest to update.
+
+```bash
+git clone https://github.com/harveyxiacn/cc-usage-monitor.git ~/.claude/plugins/cc-usage-monitor
+```
+
+Then edit `~/.claude/settings.json` and merge in:
+
+```jsonc
+{
+  "statusLine": {
+    "type": "command",
+    "command": "node ~/.claude/plugins/cc-usage-monitor/bin/statusline.js",
+    "padding": 1
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ~/.claude/plugins/cc-usage-monitor/bin/on-stop.js"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+On Windows replace `~/` with the absolute path (e.g. `C:/Users/YourName/.claude/...`)
+because PowerShell and cmd don't expand `~` when Claude Code spawns the
+command. Forward slashes work fine on Windows in JSON values.
+
+Restart Claude Code or run `/reload-plugins` to pick up the change.
+
+### Option 2 — quick try-out (no install)
 
 ```bash
 git clone https://github.com/harveyxiacn/cc-usage-monitor.git
 claude --plugin-dir ./cc-usage-monitor
 ```
 
-### Option 2 — install via marketplace
+This loads the plugin for the current Claude Code session only — handy for
+poking at it before committing to a real install.
 
-Add the repo as a marketplace, then install the plugin:
+### Option 3 — marketplace install (experimental)
 
 ```bash
 claude plugin marketplace add harveyxiacn/cc-usage-monitor
 claude plugin install cc-usage-monitor@cc-usage-monitor-marketplace
 ```
 
-### Option 3 — wire it up by hand
+The plugin ships a `.claude-plugin/marketplace.json`, but I haven't tested
+this path end-to-end. If it doesn't work for you, fall back to Option 1.
 
-If you'd rather not use the plugin system, you can add the statusline + Stop
-hook directly to your Claude Code settings.
+## Updating
 
-1. Clone the repo somewhere stable, e.g. `~/.claude/plugins/cc-usage-monitor`.
-2. Edit `~/.claude/settings.json`:
+### One-step update (recommended)
 
-   ```jsonc
-   {
-     "statusLine": {
-       "type": "command",
-       "command": "node ~/.claude/plugins/cc-usage-monitor/bin/statusline.js",
-       "padding": 1
-     },
-     "hooks": {
-       "Stop": [
-         {
-           "hooks": [
-             {
-               "type": "command",
-               "command": "node ~/.claude/plugins/cc-usage-monitor/bin/on-stop.js"
-             }
-           ]
-         }
-       ]
-     }
-   }
-   ```
+Inside any Claude Code session, run:
 
-   On Windows replace `~/` with `%USERPROFILE%/` or your absolute path.
+```
+/cc-usage-monitor:update
+```
 
-3. Restart Claude Code (or run `/reload-plugins`).
+This pulls the latest version from GitHub, prints `vOLD → vNEW`, and shows
+the relevant section of the changelog. The new version is live on the next
+assistant turn — no restart required for direct `settings.json` installs.
+
+### Manual update
+
+If you'd rather run git yourself:
+
+```bash
+git -C ~/.claude/plugins/cc-usage-monitor pull
+```
+
+(Replace the path with wherever you cloned it.)
+
+### Following releases
+
+Watch the repo or subscribe to releases on GitHub:
+
+- Releases: https://github.com/harveyxiacn/cc-usage-monitor/releases
+- Changelog: [CHANGELOG.md](CHANGELOG.md)
 
 ## Configuration
 

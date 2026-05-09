@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.4.0] - 2026-05-09
+## [0.5.0] - 2026-05-09
+
+### Added
+
+- **One-step update** via the new `/cc-usage-monitor:update` slash command. Runs `git pull --ff-only` in the plugin directory, prints `vOLD → vNEW`, and shows the relevant changelog section. The new version is live on the next assistant turn for direct `settings.json` installs.
+- New `bin/update.js` self-updater (works standalone too: `node bin/update.js`). Detects non-git installs and prints recovery instructions.
+- README **Updating** section documenting the slash command, manual git pull, and how to follow releases.
+- Install section restructured: manual install promoted to Option 1 (recommended), with a Windows note about `~/` not expanding.
+
+
 
 ### Added
 
