@@ -56,6 +56,23 @@ document on stdin. The fields we care about:
 response. Anonymous API key users will not see it; we degrade gracefully and
 still show cost + model.
 
+We also extract:
+
+- `context_window.total_input_tokens` — current loaded context size.
+- `context_window.total_output_tokens` — most recent assistant turn output.
+- `context_window.current_usage.{input,cache_creation,cache_read}_tokens` —
+  used to compute the cache-hit percentage on the latest turn.
+
+`cost.total_cost_usd` is rendered as `API≈$X.XX` to make it explicit that
+the figure is API-equivalent dollars rather than your flat subscription
+cost. Pro/Max users typically see API≈ many multiples of their monthly fee
+once they're using Claude Code heavily; the label makes the value of the
+plan visible.
+
+**Caveat**: the token fields above represent the **latest turn / current
+context**, not session-cumulative totals. True cumulative tokens would
+require walking the transcript JSONL on disk; see "Future work" below.
+
 ### Fallback: ccusage (slash command only)
 
 The `/cc-usage-monitor:usage` slash command shells out to

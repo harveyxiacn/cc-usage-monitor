@@ -6,7 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node ≥18](https://img.shields.io/badge/node-%E2%89%A518-43853d.svg)](package.json)
-[![Tests](https://img.shields.io/badge/tests-25%20passing-brightgreen.svg)](#tests)
+[![Tests](https://img.shields.io/badge/tests-34%20passing-brightgreen.svg)](#tests)
 
 ---
 
@@ -15,7 +15,7 @@
 **In the statusline (every assistant turn):**
 
 ```
-Opus  5h ▰▰▱▱▱▱▱▱▱▱ 24% (2h 14m)  7d ▰▰▰▰▱▱▱▱▱▱ 41% (2d 4h)  $0.12  +156/-23
+Opus  5h ▰▰▱▱▱▱▱▱▱▱ 24% (2h 14m)  7d ▰▰▰▰▱▱▱▱▱▱ 41% (2d 4h)  ↑16k ↓1.2k (65% cached)  API≈$0.12  +156/-23
 ```
 
 **In the CLI after every task (Stop hook):**
@@ -24,9 +24,17 @@ Opus  5h ▰▰▱▱▱▱▱▱▱▱ 24% (2h 14m)  7d ▰▰▰▰▱▱▱�
 ┌─ cc-usage-monitor ───────────────────────────────────────┐
 │ 5h window  ▰▰▰▱▱▱▱▱▱▱▱▱   24%   resets in 2h 14m         │
 │ 7d window  ▰▰▰▰▰▱▱▱▱▱▱▱   41%   resets in 2d 4h          │
-│ Session    $0.123  •  +156/-23 lines  •  Opus            │
+│ Tokens     ↑ 16k in  •  ↓ 1.2k out  •  65% cache hit     │
+│ Session    API≈$0.123  •  +156/-23 lines  •  Opus        │
 └──────────────────────────────────────────────────────────┘
 ```
+
+`API≈` makes it explicit that the cost is what this session would have cost
+on the pay-as-you-go API — a useful way for Pro/Max subscribers to see how
+much value they're getting out of the flat-rate plan.
+
+The `(65% cached)` figure is the prompt-cache hit rate on the most recent
+turn; the higher it is, the cheaper and faster your session.
 
 Plus a `/cc-usage-monitor:usage` slash command for an on-demand detailed
 report (uses [`ccusage`](https://github.com/ryoppippi/ccusage) under the hood).
@@ -46,6 +54,12 @@ of a deep work session, this plugin is for you.
 
 ## Features
 
+- **5-hour and 7-day rate-limit usage** with colored bars and reset countdowns.
+- **API-equivalent price** (`API≈$X.XX`) so you know what the session would
+  have cost on the pay-as-you-go API.
+- **Token counts** (input / output, with `k` and `M` abbreviations) and the
+  latest-turn **cache-hit percentage**.
+- **Lines added / removed** from the active session.
 - **Zero dependencies** — pure Node.js stdlib, no `node_modules` to install.
 - **Cross-platform** — Windows, macOS, Linux. The same script runs everywhere.
 - **Color-coded thresholds** — green < 70 %, yellow 70-90 %, red ≥ 90 %.
@@ -138,14 +152,14 @@ See [`docs/DESIGN.md`](docs/DESIGN.md) for the full architecture.
 npm test
 ```
 
-Runs **25 tests** covering:
+Runs **34 tests** covering:
 
-- formatter unit tests (bar rendering, time-until, cost formatting, color
-  thresholds)
-- statusline integration tests against four fixture JSON payloads (full,
-  high-usage, no-rate-limits, missing-cost)
+- formatter unit tests (bar rendering, time-until, cost formatting, token
+  abbreviation, cache-hit math, color thresholds)
+- statusline integration tests against five fixture JSON payloads (full,
+  high-usage, no-rate-limits, missing-cost, no-cache)
 - Stop-hook integration tests (output goes to stderr, `CC_USAGE_MONITOR_QUIET`
-  silences output)
+  silences output, tokens line shows when present)
 
 All tests use Node's built-in `node:test` runner — no jest, no mocha, no
 external deps.

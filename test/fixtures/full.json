@@ -22,7 +22,13 @@
     "total_output_tokens": 1200,
     "context_window_size": 200000,
     "used_percentage": 12,
-    "remaining_percentage": 88
+    "remaining_percentage": 88,
+    "current_usage": {
+      "input_tokens": 1500,
+      "output_tokens": 1200,
+      "cache_creation_input_tokens": 4000,
+      "cache_read_input_tokens": 10000
+    }
   },
   "rate_limits": {
     "five_hour": {

@@ -19,8 +19,8 @@
  *   }
  */
 
-const { readStdinJson, extractUsage } = require('../lib/parse');
-const { paint, bar, colorForPercent, timeUntil, formatCost, pct } = require('../lib/format');
+const { readStdinJson, extractUsage, cacheHitPercent } = require('../lib/parse');
+const { paint, bar, colorForPercent, timeUntil, formatCost, formatTokens, pct } = require('../lib/format');
 
 async function main() {
   const payload = await readStdinJson();
@@ -40,9 +40,12 @@ function render(u) {
   const sevenD = renderWindow('7d', u.sevenD);
   if (sevenD) parts.push(sevenD);
 
+  const tokens = renderTokens(u);
+  if (tokens) parts.push(tokens);
+
   if (u.cost != null) {
     const cost = formatCost(u.cost);
-    if (cost) parts.push(paint(cost, 'magenta'));
+    if (cost) parts.push(paint(`API≈${cost}`, 'magenta'));
   }
 
   if (u.linesAdded != null || u.linesRemoved != null) {
@@ -70,6 +73,21 @@ function renderWindow(label, win) {
   if (win.resetsAt) {
     const until = timeUntil(win.resetsAt);
     if (until) text += ` ${paint('(' + until + ')', 'gray')}`;
+  }
+  return text;
+}
+
+function renderTokens(u) {
+  const inTok = formatTokens(u.inputTokens);
+  const outTok = formatTokens(u.outputTokens);
+  if (!inTok && !outTok) return null;
+  const parts = [];
+  if (inTok) parts.push(`${paint('↑', 'gray')}${paint(inTok, 'cyan')}`);
+  if (outTok) parts.push(`${paint('↓', 'gray')}${paint(outTok, 'cyan')}`);
+  let text = parts.join(' ');
+  const hit = cacheHitPercent(u);
+  if (hit != null && hit >= 1) {
+    text += ' ' + paint(`(${pct(hit)}% cached)`, 'gray');
   }
   return text;
 }

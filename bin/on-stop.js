@@ -11,8 +11,8 @@
  * Disable by setting CC_USAGE_MONITOR_QUIET=1.
  */
 
-const { readStdinJson, extractUsage } = require('../lib/parse');
-const { paint, bar, colorForPercent, timeUntil, formatCost, pct } = require('../lib/format');
+const { readStdinJson, extractUsage, cacheHitPercent } = require('../lib/parse');
+const { paint, bar, colorForPercent, timeUntil, formatCost, formatTokens, pct } = require('../lib/format');
 
 async function main() {
   if (process.env.CC_USAGE_MONITOR_QUIET) return;
@@ -25,7 +25,13 @@ async function main() {
 
 function render(u) {
   // If we have nothing useful to say, say nothing — don't spam empty boxes.
-  if (u.fiveH == null && u.sevenD == null && u.cost == null) {
+  if (
+    u.fiveH == null
+    && u.sevenD == null
+    && u.cost == null
+    && u.inputTokens == null
+    && u.outputTokens == null
+  ) {
     return '';
   }
 
@@ -39,7 +45,9 @@ function render(u) {
   if (u.sevenD && u.sevenD.used != null) {
     lines.push(boxLine(formatWindow('7d window', u.sevenD)));
   }
-  if (u.cost != null || u.model) {
+  const tokens = formatTokensLine(u);
+  if (tokens) lines.push(boxLine(tokens));
+  if (u.cost != null || u.model || u.linesAdded != null || u.linesRemoved != null) {
     lines.push(boxLine(formatSession(u)));
   }
   lines.push(boxBottom());
@@ -63,7 +71,7 @@ function formatSession(u) {
   const bits = [];
   if (u.cost != null) {
     const c = formatCost(u.cost);
-    if (c) bits.push(paint(c, 'magenta'));
+    if (c) bits.push(paint(`API≈${c}`, 'magenta'));
   }
   if (u.linesAdded != null || u.linesRemoved != null) {
     const added = u.linesAdded ?? 0;
@@ -73,7 +81,21 @@ function formatSession(u) {
     }
   }
   if (u.model) bits.push(paint(u.model, 'cyan'));
-  return `Session     ${bits.join('  •  ')}`;
+  return `Session    ${bits.join('  •  ')}`;
+}
+
+function formatTokensLine(u) {
+  const inTok = formatTokens(u.inputTokens);
+  const outTok = formatTokens(u.outputTokens);
+  if (!inTok && !outTok) return null;
+  const bits = [];
+  if (inTok) bits.push(`${paint('↑', 'gray')} ${paint(inTok, 'cyan')} in`);
+  if (outTok) bits.push(`${paint('↓', 'gray')} ${paint(outTok, 'cyan')} out`);
+  const hit = cacheHitPercent(u);
+  if (hit != null && hit >= 1) {
+    bits.push(paint(`${pct(hit)}% cache hit`, 'green'));
+  }
+  return `Tokens     ${bits.join('  •  ')}`;
 }
 
 const BOX_INNER_WIDTH = 56;

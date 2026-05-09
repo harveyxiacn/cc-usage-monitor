@@ -1,0 +1,34 @@
+{
+  "cwd": "/home/example/project",
+  "session_id": "fixture-no-cache",
+  "model": {
+    "id": "claude-sonnet-4-6",
+    "display_name": "Sonnet"
+  },
+  "cost": {
+    "total_cost_usd": 0.45,
+    "total_lines_added": 30,
+    "total_lines_removed": 5
+  },
+  "context_window": {
+    "total_input_tokens": 8000,
+    "total_output_tokens": 600,
+    "used_percentage": 4,
+    "current_usage": {
+      "input_tokens": 8000,
+      "output_tokens": 600,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0
+    }
+  },
+  "rate_limits": {
+    "five_hour": {
+      "used_percentage": 12,
+      "resets_at": 9999999999
+    },
+    "seven_day": {
+      "used_percentage": 18,
+      "resets_at": 9999999999
+    }
+  }
+}

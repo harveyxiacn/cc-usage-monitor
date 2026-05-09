@@ -7,9 +7,11 @@ const {
   bar,
   timeUntil,
   formatCost,
+  formatTokens,
   pct,
   colorForPercent,
 } = require('../lib/format');
+const { cacheHitPercent } = require('../lib/parse');
 
 test('bar: 0% renders all empty', () => {
   assert.equal(bar(0, 10), '▱'.repeat(10));
@@ -89,4 +91,42 @@ test('colorForPercent: thresholds at 70 and 90', () => {
   assert.equal(colorForPercent(90), 'red');
   assert.equal(colorForPercent(100), 'red');
   assert.equal(colorForPercent(null), 'gray');
+});
+
+test('formatTokens: small numbers stay as-is', () => {
+  assert.equal(formatTokens(0), '0');
+  assert.equal(formatTokens(42), '42');
+  assert.equal(formatTokens(999), '999');
+});
+
+test('formatTokens: thousands use 1 decimal under 10k, integer over', () => {
+  assert.equal(formatTokens(1500), '1.5k');
+  assert.equal(formatTokens(9999), '10.0k');
+  assert.equal(formatTokens(15500), '16k');
+  assert.equal(formatTokens(156000), '156k');
+});
+
+test('formatTokens: millions use 1 decimal', () => {
+  assert.equal(formatTokens(1_200_000), '1.2M');
+  assert.equal(formatTokens(15_500_000), '15.5M');
+});
+
+test('formatTokens: null stays null', () => {
+  assert.equal(formatTokens(null), null);
+});
+
+test('cacheHitPercent: full cache reads', () => {
+  const u = { cacheReadTokens: 10000, cacheCreationTokens: 4000, rawInputTokens: 1500 };
+  // 10000 / (10000 + 4000 + 1500) = 64.5%
+  const hit = cacheHitPercent(u);
+  assert.ok(hit > 64 && hit < 65, `expected ~64.5%, got ${hit}`);
+});
+
+test('cacheHitPercent: zero cache reads with input present returns 0', () => {
+  const u = { cacheReadTokens: 0, cacheCreationTokens: 0, rawInputTokens: 8000 };
+  assert.equal(cacheHitPercent(u), 0);
+});
+
+test('cacheHitPercent: all-null returns null', () => {
+  assert.equal(cacheHitPercent({ cacheReadTokens: null, cacheCreationTokens: null, rawInputTokens: null }), null);
 });
