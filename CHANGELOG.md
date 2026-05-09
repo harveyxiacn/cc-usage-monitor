@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - 7 new tests (52 total): inverted cache-hit color thresholds, ctx bar pattern, turn cache bar pattern, session cache bar pattern (Stop hook), narrow width wraps, wide width keeps single line, `CC_USAGE_MONITOR_TWO_LINE=1` forces wrap.
 
-
+## [0.5.0] - 2026-05-09
 
 ### Added
 
@@ -33,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - README **Updating** section documenting the slash command, manual git pull, and how to follow releases.
 - Install section restructured: manual install promoted to Option 1 (recommended), with a Windows note about `~/` not expanding.
 
-
+## [0.4.0] - 2026-05-09
 
 ### Added
 
