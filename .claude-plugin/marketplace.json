@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "cc-usage-monitor-marketplace",
+  "version": "0.1.0",
+  "description": "Single-plugin marketplace for cc-usage-monitor.",
+  "owner": {
+    "name": "harveyxiacn",
+    "url": "https://github.com/harveyxiacn"
+  },
+  "plugins": [
+    {
+      "name": "cc-usage-monitor",
+      "description": "Show 5-hour and 7-day Claude Code rate-limit usage in the statusline and after every task.",
+      "source": ".",
+      "category": "productivity",
+      "version": "0.1.0",
+      "author": {
+        "name": "harveyxiacn",
+        "url": "https://github.com/harveyxiacn"
+      }
+    }
+  ]
+}

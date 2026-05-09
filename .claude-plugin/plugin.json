@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "cc-usage-monitor",
+  "version": "0.1.0",
+  "description": "Show 5-hour and 7-day Claude Code rate-limit usage in the statusline and after every task.",
+  "author": {
+    "name": "harveyxiacn",
+    "url": "https://github.com/harveyxiacn"
+  },
+  "homepage": "https://github.com/harveyxiacn/cc-usage-monitor",
+  "repository": "https://github.com/harveyxiacn/cc-usage-monitor",
+  "license": "MIT",
+  "keywords": [
+    "usage",
+    "rate-limits",
+    "statusline",
+    "monitoring",
+    "5-hour",
+    "7-day"
+  ]
+}
