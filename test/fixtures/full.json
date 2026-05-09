@@ -1,0 +1,38 @@
+{
+  "cwd": "/home/example/project",
+  "session_id": "fixture-full",
+  "transcript_path": "/tmp/fixture-full.jsonl",
+  "model": {
+    "id": "claude-opus-4-7",
+    "display_name": "Opus"
+  },
+  "workspace": {
+    "current_dir": "/home/example/project",
+    "project_dir": "/home/example/project"
+  },
+  "cost": {
+    "total_cost_usd": 0.1234,
+    "total_duration_ms": 45000,
+    "total_api_duration_ms": 2300,
+    "total_lines_added": 156,
+    "total_lines_removed": 23
+  },
+  "context_window": {
+    "total_input_tokens": 15500,
+    "total_output_tokens": 1200,
+    "context_window_size": 200000,
+    "used_percentage": 12,
+    "remaining_percentage": 88
+  },
+  "rate_limits": {
+    "five_hour": {
+      "used_percentage": 23.5,
+      "resets_at": 9999999999
+    },
+    "seven_day": {
+      "used_percentage": 41.2,
+      "resets_at": 9999999999
+    }
+  },
+  "version": "2.1.90"
+}
