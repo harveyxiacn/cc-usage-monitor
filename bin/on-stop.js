@@ -13,7 +13,7 @@
 
 const { readStdinJson, extractUsage, cacheHitPercent } = require('../lib/parse');
 const { sumSessionTokens } = require('../lib/transcript');
-const { paint, bar, colorForPercent, timeUntil, formatCost, formatTokens, pct } = require('../lib/format');
+const { paint, bar, colorForPercent, colorForCacheHit, timeUntil, formatCost, formatTokens, pct } = require('../lib/format');
 
 async function main() {
   if (process.env.CC_USAGE_MONITOR_QUIET) return;
@@ -97,8 +97,11 @@ function formatTurnLine(u) {
   if (inTok) bits.push(`${paint('↑', 'gray')} ${paint(inTok, 'cyan')}`);
   if (outTok) bits.push(`${paint('↓', 'gray')} ${paint(outTok, 'cyan')}`);
   const hit = cacheHitPercent(u);
-  if (hit != null && hit >= 1) {
-    bits.push(paint(`${pct(hit)}% cached`, 'green'));
+  if (hit != null) {
+    const color = colorForCacheHit(hit);
+    const barStr = paint(bar(hit, 12), color);
+    const pctStr = paint(`${String(pct(hit)).padStart(3)}%`, color);
+    bits.push(`${barStr} ${pctStr} ${paint('cached', 'gray')}`);
   }
   return `This turn  ${bits.join('  •  ')}`;
 }
@@ -113,10 +116,11 @@ function formatSessionLine(session) {
   bits.push(`${paint('↑', 'gray')} ${paint(formatTokens(totalIn), 'cyan')}`);
   bits.push(`${paint('↓', 'gray')} ${paint(formatTokens(totalOut), 'cyan')}`);
   if (totalIn > 0) {
-    const hitPct = (session.cacheReadTokens / totalIn) * 100;
-    if (hitPct >= 1) {
-      bits.push(paint(`${pct(hitPct)}% cached`, 'green'));
-    }
+    const hit = (session.cacheReadTokens / totalIn) * 100;
+    const color = colorForCacheHit(hit);
+    const barStr = paint(bar(hit, 12), color);
+    const pctStr = paint(`${String(pct(hit)).padStart(3)}%`, color);
+    bits.push(`${barStr} ${pctStr} ${paint('cached', 'gray')}`);
   }
   const turnsLabel = session.messageCount === 1 ? '1 turn' : `${session.messageCount} turns`;
   bits.push(paint(turnsLabel, 'gray'));

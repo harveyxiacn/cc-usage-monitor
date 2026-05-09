@@ -17,7 +17,8 @@ test('statusline: full fixture shows model + 5h + 7d + tokens + API≈cost + lin
   assert.match(stdout, /API≈\$0\.123/); // labelled as API-equivalent
   assert.match(stdout, /\+156/);
   assert.match(stdout, /-23/);
-  assert.match(stdout, /cached/); // cache hit % present
+  assert.match(stdout, /cache /); // cache hit segment present
+  assert.match(stdout, /65%/);     // cache hit %
 });
 
 test('statusline: high-usage fixture shows 95%, 88%, big tokens, API≈cost', async () => {
@@ -59,11 +60,14 @@ test('statusline: no-cache fixture shows tokens but suppresses 0% cache hit', as
   assert.doesNotMatch(stdout, /cached/);
 });
 
-test('statusline: full fixture shows context segment with absolute size', async () => {
+test('statusline: full fixture shows context segment with bar + absolute size', async () => {
   const { stdout, code } = await runScript(STATUSLINE, 'full.json');
   assert.equal(code, 0);
-  assert.match(stdout, /ctx 12%/);
+  assert.match(stdout, /ctx /);
+  assert.match(stdout, /12%/);
   assert.match(stdout, /\(16k\/200k\)/);
+  // 5-cell inline bar precedes the percentage
+  assert.match(stdout, /ctx ▰▱▱▱▱ 12%/);
 });
 
 test('statusline: full fixture + transcript path shows Σ session segment', async () => {
@@ -88,6 +92,49 @@ test('statusline: no-rate-limits fixture omits ctx (no context_window data)', as
   const { stdout, code } = await runScript(STATUSLINE, 'no-rate-limits.json');
   assert.equal(code, 0);
   assert.doesNotMatch(stdout, /ctx /);
+});
+
+test('statusline: CC_USAGE_MONITOR_WIDTH=80 wraps to two lines', async () => {
+  const { stdout, code } = await runScript(STATUSLINE, 'full.json', {
+    CC_USAGE_MONITOR_WIDTH: '80',
+  });
+  assert.equal(code, 0);
+  assert.match(stdout, /\n/);
+  const lines = stdout.split('\n');
+  assert.equal(lines.length, 2);
+  // Limits group on line 1
+  assert.match(lines[0], /Opus/);
+  assert.match(lines[0], /5h /);
+  assert.match(lines[0], /ctx /);
+  // Activity group on line 2
+  assert.match(lines[1], /↑16k/);
+  assert.match(lines[1], /API≈\$0\.123/);
+});
+
+test('statusline: CC_USAGE_MONITOR_WIDTH=500 keeps single line', async () => {
+  const { stdout, code } = await runScript(STATUSLINE, 'full.json', {
+    CC_USAGE_MONITOR_WIDTH: '500',
+  });
+  assert.equal(code, 0);
+  assert.doesNotMatch(stdout, /\n/);
+});
+
+test('statusline: CC_USAGE_MONITOR_TWO_LINE=1 always wraps', async () => {
+  const { stdout, code } = await runScript(STATUSLINE, 'full.json', {
+    CC_USAGE_MONITOR_TWO_LINE: '1',
+    CC_USAGE_MONITOR_WIDTH: '999', // wide width — would be single line normally
+  });
+  assert.equal(code, 0);
+  assert.match(stdout, /\n/);
+  const lines = stdout.split('\n');
+  assert.equal(lines.length, 2);
+});
+
+test('statusline: full fixture has cache bar after tokens', async () => {
+  const { stdout, code } = await runScript(STATUSLINE, 'full.json');
+  assert.equal(code, 0);
+  // Pattern: ↑..k ↓..k cache <bar> 65%
+  assert.match(stdout, /cache ▰{3}▱{2} 65%/);
 });
 
 test('statusline: empty stdin produces a friendly waiting message and exits 0', async () => {

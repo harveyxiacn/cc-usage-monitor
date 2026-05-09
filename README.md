@@ -6,7 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node ≥18](https://img.shields.io/badge/node-%E2%89%A518-43853d.svg)](package.json)
-[![Tests](https://img.shields.io/badge/tests-45%20passing-brightgreen.svg)](#tests)
+[![Tests](https://img.shields.io/badge/tests-52%20passing-brightgreen.svg)](#tests)
 
 ---
 
@@ -15,26 +15,35 @@
 **In the statusline (every assistant turn):**
 
 ```
-Opus  5h ▰▰ 24% (2h 14m)  7d ▰▰▰▰ 41% (2d 4h)  ctx 12% (16k/200k)  ↑16k ↓1.2k (65% cached)  Σ↑6.8M ↓94k  API≈$0.12  +156/-23
+Opus  5h ▰▰ 24% (2h 14m)  7d ▰▰▰▰ 41% (2d 4h)  ctx ▰▱▱▱▱ 12% (16k/200k)  ↑16k ↓1.2k cache ▰▰▰▱▱ 65%  Σ↑6.8M ↓94k cache ▰▰▰▰▰ 96%  API≈$0.12  +156/-23
 ```
 
-Three usage signals at a glance: rate-limit windows, context-window fill,
-and tokens (latest turn vs. session-cumulative). The `Σ` segment is the
-sum across the whole session, walked from the transcript JSONL. Set
-`CC_USAGE_MONITOR_NO_SESSION=1` to skip the disk walk if you want a
-lighter statusline.
+Every bounded metric (rate-limit windows, context fill, cache hit %) gets
+a colored progress bar; tokens, cost, and lines stay numeric. Cache-hit
+colors are inverted relative to rate-limit colors (higher = greener) since
+a high hit rate means cheap, fast turns.
+
+When the statusline is too long for the terminal it **wraps to two lines**
+— *limits* (model / 5h / 7d / ctx) on top, *activity* (tokens / cost /
+lines) below. Override behaviour:
+
+```
+CC_USAGE_MONITOR_WIDTH=120     # wrap when visible width exceeds N columns
+CC_USAGE_MONITOR_TWO_LINE=1    # always two lines
+CC_USAGE_MONITOR_NO_SESSION=1  # skip transcript walk (no Σ segment)
+```
 
 **In the CLI after every task (Stop hook):**
 
 ```
-┌─ cc-usage-monitor ───────────────────────────────────────────┐
-│ 5h window  ▰▰▰▱▱▱▱▱▱▱▱▱   24%   resets in 2h 14m             │
-│ 7d window  ▰▰▰▰▰▱▱▱▱▱▱▱   41%   resets in 2d 4h              │
-│ Context    ▰▱▱▱▱▱▱▱▱▱▱▱   12%   16k of 200k                  │
-│ This turn  ↑ 16k  •  ↓ 1.2k  •  65% cached                   │
-│ Session    ↑ 6.8M  •  ↓ 94k  •  96% cached  •  65 turns      │
-│ Cost       API≈$0.123  •  +156/-23 lines  •  Opus            │
-└──────────────────────────────────────────────────────────────┘
+┌─ cc-usage-monitor ─────────────────────────────────────────────────────┐
+│ 5h window  ▰▰▰▱▱▱▱▱▱▱▱▱   24%   resets in 2h 14m                       │
+│ 7d window  ▰▰▰▰▰▱▱▱▱▱▱▱   41%   resets in 2d 4h                        │
+│ Context    ▰▱▱▱▱▱▱▱▱▱▱▱   12%   16k of 200k                            │
+│ This turn  ↑ 16k  •  ↓ 1.2k  •  ▰▰▰▰▰▰▰▰▱▱▱▱  65% cached               │
+│ Session    ↑ 6.8M  •  ↓ 94k  •  ▰▰▰▰▰▰▰▰▰▰▰▱  96% cached  •  65 turns  │
+│ Cost       API≈$0.123  •  +156/-23 lines  •  Opus                      │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 The six rows in the box:
@@ -190,6 +199,8 @@ Watch the repo or subscribe to releases on GitHub:
 | --- | --- |
 | `CC_USAGE_MONITOR_QUIET=1`        | Silences the post-task box. Statusline still updates. |
 | `CC_USAGE_MONITOR_NO_SESSION=1`   | Skip the transcript walk in the statusline (drops the `Σ` segment). The Stop-hook Session row is unaffected. |
+| `CC_USAGE_MONITOR_WIDTH=N`        | Wrap statusline to two lines when its visible width exceeds N columns. Defaults to `process.stdout.columns` / `$COLUMNS` / `160`. |
+| `CC_USAGE_MONITOR_TWO_LINE=1`     | Force two-line statusline regardless of width. |
 | `NO_COLOR=1`                      | Disables ANSI colors (statusline + Stop hook). |
 | `CC_USAGE_MONITOR_NO_COLOR=1`     | Same as `NO_COLOR=1`. |
 | `FORCE_COLOR=0`                   | Force colors off. |

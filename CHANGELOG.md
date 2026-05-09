@@ -7,7 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.0] - 2026-05-09
+## [0.6.0] - 2026-05-09
+
+### Added
+
+- **Progress bars on every bounded metric:**
+  - Statusline: 5-cell inline bar before the context-window % (`ctx ▰▱▱▱▱ 12%`) and after each token group (`↑16k ↓1.2k cache ▰▰▰▱▱ 65%` and `Σ↑6.8M ↓94k cache ▰▰▰▰▱ 96%`).
+  - Stop-hook box: 12-cell bar in the cache-hit segment of both `This turn` and `Session` rows.
+- **Inverted color thresholds for cache hit** — higher = better, since high cache reuse means cheaper, faster turns. New `colorForCacheHit` helper: `≥ 70 %` green, `40-70 %` yellow, `< 40 %` red.
+- **Multi-line wrapping when the statusline is too long** to fit on one line. Splits between the *limits* group (model / 5h / 7d / ctx) and the *activity* group (turn / session / cost / lines).
+  - Width is detected from `process.stdout.columns`, then `$COLUMNS`, then defaults to 160.
+  - Override via `CC_USAGE_MONITOR_WIDTH=N`.
+  - Force two-line layout regardless of width with `CC_USAGE_MONITOR_TWO_LINE=1`.
+
+### Tests
+
+- 7 new tests (52 total): inverted cache-hit color thresholds, ctx bar pattern, turn cache bar pattern, session cache bar pattern (Stop hook), narrow width wraps, wide width keeps single line, `CC_USAGE_MONITOR_TWO_LINE=1` forces wrap.
+
+
 
 ### Added
 

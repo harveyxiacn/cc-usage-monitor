@@ -1,6 +1,6 @@
 {
   "name": "cc-usage-monitor",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Claude Code plugin: shows 5-hour and 7-day usage limits in the statusline and after every task",
   "main": "bin/statusline.js",
   "type": "commonjs",

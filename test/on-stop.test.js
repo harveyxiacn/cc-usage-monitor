@@ -57,13 +57,15 @@ test('on-stop: missing-cost fixture still prints rate-limit windows', async () =
   assert.match(stderr, /7d window/);
 });
 
-test('on-stop: no-cache fixture shows This turn without cache hit', async () => {
+test('on-stop: no-cache fixture shows This turn with 0% cache bar', async () => {
   const { stderr, code } = await runScript(ON_STOP, 'no-cache.json');
   assert.equal(code, 0);
   assert.match(stderr, /This turn/);
   assert.match(stderr, /↑ 8\.0k/);
   assert.match(stderr, /↓ 600/);
-  assert.doesNotMatch(stderr, /cached/);
+  // 0% is shown as a red bar — every metric with a bounded scale gets one
+  assert.match(stderr, /0%/);
+  assert.match(stderr, /cached/);
 });
 
 test('on-stop: CC_USAGE_MONITOR_QUIET=1 silences output', async () => {
@@ -81,6 +83,20 @@ test('on-stop: full fixture prints Context line with bar and absolute size', asy
   assert.match(stderr, /Context/);
   assert.match(stderr, /12%/);
   assert.match(stderr, /16k of 200k/);
+});
+
+test('on-stop: full fixture has cache hit bar in This turn line', async () => {
+  const { stderr, code } = await runScript(ON_STOP, 'full.json');
+  assert.equal(code, 0);
+  // 12-cell bar followed by " 65% cached"
+  assert.match(stderr, /▰{8}▱{4} {1,2}65% cached/);
+});
+
+test('on-stop: full fixture + transcript has cache hit bar in Session line too', async () => {
+  const { stderr, code } = await runScript(ON_STOP, 'full.json', {}, withTranscript);
+  assert.equal(code, 0);
+  // Session cache 59% should render as ▰▰▰▰▰▰▰▱▱▱▱▱ 59% cached
+  assert.match(stderr, /▰{7}▱{5} {1,2}59% cached/);
 });
 
 test('on-stop: missing transcript_path does NOT print Session line', async () => {

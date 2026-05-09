@@ -23,12 +23,19 @@
  *
  * Environment toggles:
  *   CC_USAGE_MONITOR_NO_SESSION=1   skip the transcript walk (no Σ segment)
+ *   CC_USAGE_MONITOR_WIDTH=N        wrap to a second line if the visible
+ *                                   width would exceed N columns. Defaults
+ *                                   to process.stdout.columns / $COLUMNS /
+ *                                   160 — whichever is found first.
+ *   CC_USAGE_MONITOR_TWO_LINE=1     always wrap, regardless of width.
  *   NO_COLOR=1 / FORCE_COLOR=0      disable colors
  */
 
 const { readStdinJson, extractUsage, cacheHitPercent } = require('../lib/parse');
 const { sumSessionTokens } = require('../lib/transcript');
-const { paint, bar, colorForPercent, timeUntil, formatCost, formatTokens, pct } = require('../lib/format');
+const { paint, bar, colorForPercent, colorForCacheHit, timeUntil, formatCost, formatTokens, pct } = require('../lib/format');
+
+const INLINE_BAR_WIDTH = 5;
 
 async function main() {
   const payload = await readStdinJson();
@@ -45,39 +52,74 @@ async function main() {
 }
 
 function render(u, session) {
-  const parts = [];
+  // Two semantic groups so that, when the line is too long for the terminal,
+  // we can break between them: limits/state (line 1) vs. session activity
+  // (line 2). When everything fits, they join into a single line.
+  const limits = [];
+  const activity = [];
 
-  if (u.model) parts.push(paint(u.model, 'cyan'));
+  if (u.model) limits.push(paint(u.model, 'cyan'));
 
   const fiveH = renderWindow('5h', u.fiveH);
-  if (fiveH) parts.push(fiveH);
+  if (fiveH) limits.push(fiveH);
 
   const sevenD = renderWindow('7d', u.sevenD);
-  if (sevenD) parts.push(sevenD);
+  if (sevenD) limits.push(sevenD);
 
   const ctx = renderContext(u);
-  if (ctx) parts.push(ctx);
+  if (ctx) limits.push(ctx);
 
   const turn = renderTurn(u);
-  if (turn) parts.push(turn);
+  if (turn) activity.push(turn);
 
   const sess = renderSession(session);
-  if (sess) parts.push(sess);
+  if (sess) activity.push(sess);
 
   if (u.cost != null) {
     const cost = formatCost(u.cost);
-    if (cost) parts.push(paint(`API≈${cost}`, 'magenta'));
+    if (cost) activity.push(paint(`API≈${cost}`, 'magenta'));
   }
 
   if (u.linesAdded != null || u.linesRemoved != null) {
     const added = u.linesAdded ?? 0;
     const removed = u.linesRemoved ?? 0;
     if (added !== 0 || removed !== 0) {
-      parts.push(`${paint('+' + added, 'green')}/${paint('-' + removed, 'red')}`);
+      activity.push(`${paint('+' + added, 'green')}/${paint('-' + removed, 'red')}`);
     }
   }
 
-  return parts.length ? parts.join('  ') : paint('cc-usage-monitor: waiting for first turn…', 'gray');
+  if (!limits.length && !activity.length) {
+    return paint('cc-usage-monitor: waiting for first turn…', 'gray');
+  }
+
+  const single = [...limits, ...activity].join('  ');
+  if (process.env.CC_USAGE_MONITOR_TWO_LINE && limits.length && activity.length) {
+    return limits.join('  ') + '\n' + activity.join('  ');
+  }
+
+  const width = getTerminalWidth();
+  if (width && visibleLength(single) > width && limits.length && activity.length) {
+    return limits.join('  ') + '\n' + activity.join('  ');
+  }
+  return single;
+}
+
+function getTerminalWidth() {
+  const env = process.env.CC_USAGE_MONITOR_WIDTH;
+  if (env) {
+    const n = parseInt(env, 10);
+    if (n > 0) return n;
+  }
+  if (process.stdout && process.stdout.columns) return process.stdout.columns;
+  if (process.env.COLUMNS) {
+    const n = parseInt(process.env.COLUMNS, 10);
+    if (n > 0) return n;
+  }
+  return 160;
+}
+
+function visibleLength(s) {
+  return String(s).replace(/\x1b\[[0-9;]*m/g, '').length;
 }
 
 function renderWindow(label, win) {
@@ -97,8 +139,9 @@ function renderWindow(label, win) {
 function renderContext(u) {
   if (u.contextPct == null) return null;
   const color = colorForPercent(u.contextPct);
+  const barStr = paint(bar(u.contextPct, INLINE_BAR_WIDTH), color);
   const pctStr = paint(`${pct(u.contextPct)}%`, color);
-  let text = `${paint('ctx', 'gray')} ${pctStr}`;
+  let text = `${paint('ctx', 'gray')} ${barStr} ${pctStr}`;
   if (u.contextSize && u.inputTokens != null) {
     const used = formatTokens(u.inputTokens);
     const total = formatTokens(u.contextSize);
@@ -116,8 +159,11 @@ function renderTurn(u) {
   if (outTok) parts.push(`${paint('↓', 'gray')}${paint(outTok, 'cyan')}`);
   let text = parts.join(' ');
   const hit = cacheHitPercent(u);
-  if (hit != null && hit >= 1) {
-    text += ' ' + paint(`(${pct(hit)}% cached)`, 'gray');
+  if (hit != null) {
+    const color = colorForCacheHit(hit);
+    const barStr = paint(bar(hit, INLINE_BAR_WIDTH), color);
+    const pctStr = paint(`${pct(hit)}%`, color);
+    text += ` ${paint('cache', 'gray')} ${barStr} ${pctStr}`;
   }
   return text;
 }
@@ -131,7 +177,15 @@ function renderSession(session) {
   const parts = [];
   parts.push(`${paint('Σ↑', 'gray')}${paint(formatTokens(totalIn), 'cyan')}`);
   parts.push(`${paint('↓', 'gray')}${paint(formatTokens(totalOut), 'cyan')}`);
-  return parts.join(' ');
+  let text = parts.join(' ');
+  if (totalIn > 0) {
+    const hit = (session.cacheReadTokens / totalIn) * 100;
+    const color = colorForCacheHit(hit);
+    const barStr = paint(bar(hit, INLINE_BAR_WIDTH), color);
+    const pctStr = paint(`${pct(hit)}%`, color);
+    text += ` ${paint('cache', 'gray')} ${barStr} ${pctStr}`;
+  }
+  return text;
 }
 
 main().catch(() => {

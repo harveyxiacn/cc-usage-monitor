@@ -10,6 +10,7 @@ const {
   formatTokens,
   pct,
   colorForPercent,
+  colorForCacheHit,
 } = require('../lib/format');
 const { cacheHitPercent } = require('../lib/parse');
 
@@ -129,4 +130,17 @@ test('cacheHitPercent: zero cache reads with input present returns 0', () => {
 
 test('cacheHitPercent: all-null returns null', () => {
   assert.equal(cacheHitPercent({ cacheReadTokens: null, cacheCreationTokens: null, rawInputTokens: null }), null);
+});
+
+test('colorForCacheHit: inverted thresholds at 40 and 70 (higher=better)', () => {
+  // Low cache hit = expensive = red
+  assert.equal(colorForCacheHit(0), 'red');
+  assert.equal(colorForCacheHit(39), 'red');
+  // Medium = yellow
+  assert.equal(colorForCacheHit(40), 'yellow');
+  assert.equal(colorForCacheHit(69), 'yellow');
+  // High cache hit = cheap = green
+  assert.equal(colorForCacheHit(70), 'green');
+  assert.equal(colorForCacheHit(100), 'green');
+  assert.equal(colorForCacheHit(null), 'gray');
 });
