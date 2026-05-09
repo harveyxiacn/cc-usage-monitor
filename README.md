@@ -6,7 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node ≥18](https://img.shields.io/badge/node-%E2%89%A518-43853d.svg)](package.json)
-[![Tests](https://img.shields.io/badge/tests-40%20passing-brightgreen.svg)](#tests)
+[![Tests](https://img.shields.io/badge/tests-45%20passing-brightgreen.svg)](#tests)
 
 ---
 
@@ -15,12 +15,14 @@
 **In the statusline (every assistant turn):**
 
 ```
-Opus  5h ▰▰▱▱▱▱▱▱▱▱ 24% (2h 14m)  7d ▰▰▰▰▱▱▱▱▱▱ 41% (2d 4h)  ↑16k ↓1.2k (65% cached)  API≈$0.12  +156/-23
+Opus  5h ▰▰ 24% (2h 14m)  7d ▰▰▰▰ 41% (2d 4h)  ctx 12% (16k/200k)  ↑16k ↓1.2k (65% cached)  Σ↑6.8M ↓94k  API≈$0.12  +156/-23
 ```
 
-The statusline stays compact because it runs on every assistant turn —
-it only shows the most recent turn's tokens and cache hit (no transcript
-walking). For session-cumulative numbers, see the box below.
+Three usage signals at a glance: rate-limit windows, context-window fill,
+and tokens (latest turn vs. session-cumulative). The `Σ` segment is the
+sum across the whole session, walked from the transcript JSONL. Set
+`CC_USAGE_MONITOR_NO_SESSION=1` to skip the disk walk if you want a
+lighter statusline.
 
 **In the CLI after every task (Stop hook):**
 
@@ -28,16 +30,20 @@ walking). For session-cumulative numbers, see the box below.
 ┌─ cc-usage-monitor ───────────────────────────────────────────┐
 │ 5h window  ▰▰▰▱▱▱▱▱▱▱▱▱   24%   resets in 2h 14m             │
 │ 7d window  ▰▰▰▰▰▱▱▱▱▱▱▱   41%   resets in 2d 4h              │
+│ Context    ▰▱▱▱▱▱▱▱▱▱▱▱   12%   16k of 200k                  │
 │ This turn  ↑ 16k  •  ↓ 1.2k  •  65% cached                   │
 │ Session    ↑ 6.8M  •  ↓ 94k  •  96% cached  •  65 turns      │
 │ Cost       API≈$0.123  •  +156/-23 lines  •  Opus            │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-The five rows in the box:
+The six rows in the box:
 
 - **5h / 7d window** — rate-limit usage with a colored bar and reset
   countdown.
+- **Context** — how much of the model's context window is currently
+  loaded, with absolute used/total token counts. Color thresholds the
+  same as the rate-limit rows.
 - **This turn** — tokens for the most recent assistant turn plus the
   prompt-cache hit rate for that turn.
 - **Session** — cumulative tokens across the whole session, computed by
@@ -140,9 +146,11 @@ hook directly to your Claude Code settings.
 
 | Environment variable | Effect |
 | --- | --- |
-| `CC_USAGE_MONITOR_QUIET=1` | Silences the post-task box. Statusline still updates. |
-| `NO_COLOR=1`               | Disables ANSI colors (statusline + Stop hook). |
-| `FORCE_COLOR=1`            | Forces ANSI colors even when stdout isn't a TTY. |
+| `CC_USAGE_MONITOR_QUIET=1`        | Silences the post-task box. Statusline still updates. |
+| `CC_USAGE_MONITOR_NO_SESSION=1`   | Skip the transcript walk in the statusline (drops the `Σ` segment). The Stop-hook Session row is unaffected. |
+| `NO_COLOR=1`                      | Disables ANSI colors (statusline + Stop hook). |
+| `CC_USAGE_MONITOR_NO_COLOR=1`     | Same as `NO_COLOR=1`. |
+| `FORCE_COLOR=0`                   | Force colors off. |
 
 ## How it works
 

@@ -75,6 +75,14 @@ test('on-stop: CC_USAGE_MONITOR_QUIET=1 silences output', async () => {
   assert.equal(stderr, '');
 });
 
+test('on-stop: full fixture prints Context line with bar and absolute size', async () => {
+  const { stderr, code } = await runScript(ON_STOP, 'full.json');
+  assert.equal(code, 0);
+  assert.match(stderr, /Context/);
+  assert.match(stderr, /12%/);
+  assert.match(stderr, /16k of 200k/);
+});
+
 test('on-stop: missing transcript_path does NOT print Session line', async () => {
   // full.json has no transcript_path, so session totals shouldn't appear
   const { stderr, code } = await runScript(ON_STOP, 'full.json');

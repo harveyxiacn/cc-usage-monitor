@@ -48,6 +48,8 @@ function render(u, session) {
   if (u.sevenD && u.sevenD.used != null) {
     lines.push(boxLine(formatWindow('7d window', u.sevenD)));
   }
+  const ctx = formatContextLine(u);
+  if (ctx) lines.push(boxLine(ctx));
   const turn = formatTurnLine(u);
   if (turn) lines.push(boxLine(turn));
   const sessionLine = formatSessionLine(session);
@@ -68,6 +70,21 @@ function formatWindow(label, win) {
   if (win.resetsAt) {
     const until = timeUntil(win.resetsAt);
     if (until) text += paint(`   resets in ${until}`, 'gray');
+  }
+  return text;
+}
+
+function formatContextLine(u) {
+  if (u.contextPct == null) return null;
+  const p = pct(u.contextPct);
+  const color = colorForPercent(u.contextPct);
+  const barStr = paint(bar(u.contextPct, 12), color);
+  const pctStr = paint(`${String(p).padStart(3)}%`, color);
+  let text = `${'Context'.padEnd(10)} ${barStr}  ${pctStr}`;
+  if (u.contextSize && u.inputTokens != null) {
+    const used = formatTokens(u.inputTokens);
+    const total = formatTokens(u.contextSize);
+    text += paint(`   ${used} of ${total}`, 'gray');
   }
   return text;
 }

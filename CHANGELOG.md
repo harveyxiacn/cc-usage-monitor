@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-09
+
+### Added
+
+- **Context-window utilisation** in both surfaces:
+  - Statusline: `ctx 12% (16k/200k)` — colored percentage plus absolute used/total in tokens.
+  - Stop-hook box: new `Context` row with a 12-cell bar, percentage, and absolute size.
+- **Session-cumulative tokens in the statusline** — the same transcript walker the Stop hook uses now feeds the statusline too. Rendered as `Σ↑6.8M ↓94k` (Σ marks the cumulative segment to distinguish it from the per-turn `↑16k ↓1.2k`).
+- New `CC_USAGE_MONITOR_NO_SESSION=1` env var as an escape hatch to skip the transcript walk in the statusline (turn-level numbers still show).
+
+### Changed
+
+- Statusline: `ctx X%` is now always shown when context-window data is present, instead of only at ≥ 50%. Lets you watch context fill up from the very first turn.
+- `lib/parse.js` now exposes `contextSize` and falls back to computing `contextPct` from `total_input_tokens / context_window_size` when Claude Code's payload omits `used_percentage`.
+
+### Tests
+
+- 5 new tests (45 total): statusline ctx segment + absolute size, statusline Σ session segment, `CC_USAGE_MONITOR_NO_SESSION` escape hatch, no-rate-limits omits ctx, on-stop Context row.
+
 ## [0.3.1] - 2026-05-08
 
 ### Fixed

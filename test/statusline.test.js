@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { runScript, STATUSLINE } = require('./helpers');
+const { runScript, STATUSLINE, withTranscript } = require('./helpers');
 
 test('statusline: full fixture shows model + 5h + 7d + tokens + API≈cost + lines', async () => {
   const { stdout, code } = await runScript(STATUSLINE, 'full.json');
@@ -57,6 +57,37 @@ test('statusline: no-cache fixture shows tokens but suppresses 0% cache hit', as
   assert.match(stdout, /↑8\.0k/);
   assert.match(stdout, /↓600/);
   assert.doesNotMatch(stdout, /cached/);
+});
+
+test('statusline: full fixture shows context segment with absolute size', async () => {
+  const { stdout, code } = await runScript(STATUSLINE, 'full.json');
+  assert.equal(code, 0);
+  assert.match(stdout, /ctx 12%/);
+  assert.match(stdout, /\(16k\/200k\)/);
+});
+
+test('statusline: full fixture + transcript path shows Σ session segment', async () => {
+  const { stdout, code } = await runScript(STATUSLINE, 'full.json', {}, withTranscript);
+  assert.equal(code, 0);
+  // Session totals from synthetic transcript: total_in=892, total_out=250
+  assert.match(stdout, /Σ↑892/);
+  assert.match(stdout, /↓250/);
+});
+
+test('statusline: CC_USAGE_MONITOR_NO_SESSION=1 suppresses Σ even with transcript_path', async () => {
+  const { stdout, code } = await runScript(
+    STATUSLINE, 'full.json',
+    { CC_USAGE_MONITOR_NO_SESSION: '1' },
+    withTranscript
+  );
+  assert.equal(code, 0);
+  assert.doesNotMatch(stdout, /Σ/);
+});
+
+test('statusline: no-rate-limits fixture omits ctx (no context_window data)', async () => {
+  const { stdout, code } = await runScript(STATUSLINE, 'no-rate-limits.json');
+  assert.equal(code, 0);
+  assert.doesNotMatch(stdout, /ctx /);
 });
 
 test('statusline: empty stdin produces a friendly waiting message and exits 0', async () => {
