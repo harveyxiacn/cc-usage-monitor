@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-05-08
+
+### Fixed
+
+- Statusline and Stop-hook output appeared without colors when run by Claude Code. Root cause: color detection was gated on `process.stdout.isTTY`, but Claude Code spawns these scripts with stdio piped (so `isTTY` is always false), even though the terminal that ultimately renders the output does interpret ANSI codes. Default behaviour is now color-on; opt out via `NO_COLOR=1`, `CC_USAGE_MONITOR_NO_COLOR=1`, or `FORCE_COLOR=0`.
+
 ## [0.3.0] - 2026-05-08
 
 ### Added
