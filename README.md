@@ -15,7 +15,7 @@
 **In the statusline (every assistant turn):**
 
 ```
-Opus  5h ▰▰ 24% (2h 14m)  7d ▰▰▰▰ 41% (2d 4h)  ctx ▰▱▱▱▱ 12% (16k/200k)  ↑16k ↓1.2k cache ▰▰▰▱▱ 65%  Σ↑6.8M ↓94k cache ▰▰▰▰▰ 96%  API≈$0.12  +156/-23
+Sonnet 4.6  ctx ▰▰▱▱▱ 32% (320k/1.0M)  5h ▰▱▱▱▱ 24% (2h 14m)  7d ▰▰▱▱▱ 41% (2d 4h)  Σ↑6.8M ↓94k cache ▰▰▰▰▰ 96%  API≈$0.12  +156/-23
 ```
 
 Every bounded metric (rate-limit windows, context fill, cache hit %) gets
@@ -23,15 +23,9 @@ a colored progress bar; tokens, cost, and lines stay numeric. Cache-hit
 colors are inverted relative to rate-limit colors (higher = greener) since
 a high hit rate means cheap, fast turns.
 
-When the statusline is too long for the terminal it **wraps to two lines**
-— *limits* (model / 5h / 7d / ctx) on top, *activity* (tokens / cost /
-lines) below. Override behaviour:
-
-```
-CC_USAGE_MONITOR_WIDTH=120     # wrap when visible width exceeds N columns
-CC_USAGE_MONITOR_TWO_LINE=1    # always two lines
-CC_USAGE_MONITOR_NO_SESSION=1  # skip transcript walk (no Σ segment)
-```
+Which components appear — and in what order — is fully configurable via
+`CC_USAGE_MONITOR_SHOW`. The bar style is configurable via
+`CC_USAGE_MONITOR_BAR_STYLE`. See [Configuration](#configuration) below.
 
 **In the CLI after every task (Stop hook):**
 
@@ -95,6 +89,8 @@ of a deep work session, this plugin is for you.
 - **Color-coded thresholds** — green < 70 %, yellow 70-90 %, red ≥ 90 %.
 - **Graceful degradation** — anonymous API users (no `rate_limits` field) get
   cost + model only; nothing crashes.
+- **Configurable layout** — choose which components appear and in what order via `CC_USAGE_MONITOR_SHOW`.
+- **5 bar styles** — `block` (default), `shade`, `square`, `thin`, `ascii` via `CC_USAGE_MONITOR_BAR_STYLE`.
 - **Quietable** — set `CC_USAGE_MONITOR_QUIET=1` to silence the post-task box.
 - **One-step updates** — `/cc-usage-monitor:update` pulls the latest from GitHub.
 - **No telemetry, no network** — reads only the JSON Claude Code already pipes
@@ -195,15 +191,87 @@ Watch the repo or subscribe to releases on GitHub:
 
 ## Configuration
 
+### Choosing which components to display
+
+Set `CC_USAGE_MONITOR_SHOW` to a comma-separated list of component keys.
+The order you write them is the order they appear in the statusline.
+
+```
+CC_USAGE_MONITOR_SHOW=model,ctx,5h,7d,session,cost
+```
+
+| Key | What it shows | Default |
+| --- | --- | :---: |
+| `model` | Model name (e.g. `Sonnet 4.6`) | ✓ |
+| `ctx` | Context window usage bar + % + `(used/total)` | ✓ |
+| `5h` | 5-hour rate-limit bar + % + reset countdown | ✓ |
+| `7d` | 7-day rate-limit bar + % + reset countdown | ✓ |
+| `turn` | Current-turn input/output token counts | |
+| `session` | Session-cumulative tokens · lines added/removed · cache-hit bar | ✓ |
+| `cost` | API-equivalent cost (`API≈$X.XX`) | ✓ |
+| `lines` | Lines added/removed only (standalone, without session tokens) | |
+
+If `CC_USAGE_MONITOR_SHOW` is not set, the default order is:
+`model, ctx, 5h, 7d, session, cost`.
+
+> **Note:** `lines` is embedded inside the `session` component by default
+> (`Σ↑3.1M ↓22k │ +153/-125 │ cache ▰▰▰▰▰ 96%`). Use the standalone `lines`
+> key only when you want lines without session token counts.
+
+### Choosing a bar style
+
+Set `CC_USAGE_MONITOR_BAR_STYLE` to one of the values below.
+
+```
+CC_USAGE_MONITOR_BAR_STYLE=shade
+```
+
+| Value | Example (40% filled, 5 cells) | Character set |
+| --- | --- | --- |
+| `block` *(default)* | `▰▰▱▱▱` | `▰` filled · `▱` empty |
+| `shade` | `██░░░` | `█` filled · `░` empty |
+| `square` | `■■□□□` | `■` filled · `□` empty |
+| `thin` | `━━╌╌╌` | `━` filled · `╌` empty |
+| `ascii` | `##---` | `#` filled · `-` empty (no Unicode required) |
+
+### Setting environment variables
+
+**macOS / Linux** — add to your shell profile or prefix the command:
+
+```bash
+export CC_USAGE_MONITOR_SHOW=model,ctx,5h,7d,cost
+export CC_USAGE_MONITOR_BAR_STYLE=shade
+```
+
+**Windows** — set system-wide with `setx` (takes effect after restart):
+
+```powershell
+setx CC_USAGE_MONITOR_SHOW "model,ctx,5h,7d,cost"
+setx CC_USAGE_MONITOR_BAR_STYLE "shade"
+```
+
+Or inline in `settings.json` if you want to scope it to Claude Code only:
+
+```jsonc
+{
+  "statusLine": {
+    "type": "command",
+    "command": "bash -c 'CC_USAGE_MONITOR_SHOW=model,ctx,5h,7d,cost CC_USAGE_MONITOR_BAR_STYLE=shade exec node ~/.claude/plugins/cc-usage-monitor/bin/statusline.js'",
+    "padding": 1
+  }
+}
+```
+
+### Other toggles
+
 | Environment variable | Effect |
 | --- | --- |
-| `CC_USAGE_MONITOR_QUIET=1`        | Silences the post-task box. Statusline still updates. |
-| `CC_USAGE_MONITOR_NO_SESSION=1`   | Skip the transcript walk in the statusline (drops the `Σ` segment). The Stop-hook Session row is unaffected. |
-| `CC_USAGE_MONITOR_WIDTH=N`        | Wrap statusline to two lines when its visible width exceeds N columns. Defaults to `process.stdout.columns` / `$COLUMNS` / `160`. |
-| `CC_USAGE_MONITOR_TWO_LINE=1`     | Force two-line statusline regardless of width. |
-| `NO_COLOR=1`                      | Disables ANSI colors (statusline + Stop hook). |
-| `CC_USAGE_MONITOR_NO_COLOR=1`     | Same as `NO_COLOR=1`. |
-| `FORCE_COLOR=0`                   | Force colors off. |
+| `CC_USAGE_MONITOR_QUIET=1`      | Silences the post-task box. Statusline still updates. |
+| `CC_USAGE_MONITOR_NO_SESSION=1` | Skip the transcript walk in the statusline (drops the `Σ` segment). The Stop-hook Session row is unaffected. |
+| `CC_USAGE_MONITOR_TWO_LINE=1`   | Force the statusline to wrap to two lines. |
+| `NO_COLOR=1`                    | Disables ANSI colors (statusline + Stop hook). |
+| `CC_USAGE_MONITOR_NO_COLOR=1`   | Same as `NO_COLOR=1`. |
+| `FORCE_COLOR=0`                 | Force colors off. |
 
 ## How it works
 

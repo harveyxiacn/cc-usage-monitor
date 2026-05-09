@@ -36,6 +36,10 @@ const { sumSessionTokens } = require('../lib/transcript');
 const { paint, bar, colorForPercent, colorForCacheHit, timeUntil, formatCost, formatTokens, pct } = require('../lib/format');
 
 const INLINE_BAR_WIDTH = 5;
+const SEP = ` ${paint('│', 'gray')} `;
+const ACTIVE_SHOW = process.env.CC_USAGE_MONITOR_SHOW
+  ? process.env.CC_USAGE_MONITOR_SHOW.split(',').map(s => s.trim()).filter(Boolean)
+  : null;
 
 async function main() {
   const payload = await readStdinJson();
@@ -51,84 +55,45 @@ async function main() {
   process.stdout.write(line);
 }
 
+const DEFAULT_SHOW = ['model', 'ctx', '5h', '7d', 'session', 'cost'];
+
+function renderLines(u) {
+  const added = u.linesAdded ?? 0;
+  const removed = u.linesRemoved ?? 0;
+  if (added === 0 && removed === 0) return null;
+  return `${paint('+' + added, 'green')}/${paint('-' + removed, 'red')}`;
+}
+
+function renderCost(u) {
+  const c = u.cost != null ? formatCost(u.cost) : null;
+  return c ? paint(`API≈${c}`, 'magenta') : null;
+}
+
+const COMPONENTS = {
+  model:   (u)          => u.model ? paint(u.model, 'cyan') : null,
+  ctx:     (u)          => renderContext(u),
+  '5h':    (u)          => renderWindow('5h', u.fiveH),
+  '7d':    (u)          => renderWindow('7d', u.sevenD),
+  turn:    (u)          => renderTurn(u),
+  session: (u, session) => renderSession(session, u) ?? renderLines(u),
+  cost:    (u)          => renderCost(u),
+  lines:   (u)          => renderLines(u),
+};
+
 function render(u, session) {
-  // Two semantic groups so that, when the line is too long for the terminal,
-  // we can break between them: limits/state (line 1) vs. session activity
-  // (line 2). When everything fits, they join into a single line.
-  const limits = [];
-  const activity = [];
-
-  if (u.model) limits.push(paint(u.model, 'cyan'));
-
-  const fiveH = renderWindow('5h', u.fiveH);
-  if (fiveH) limits.push(fiveH);
-
-  const sevenD = renderWindow('7d', u.sevenD);
-  if (sevenD) limits.push(sevenD);
-
-  const ctx = renderContext(u);
-  if (ctx) limits.push(ctx);
-
-  const turn = renderTurn(u);
-  if (turn) activity.push(turn);
-
-  const sess = renderSession(session);
-  if (sess) activity.push(sess);
-
-  if (u.cost != null) {
-    const cost = formatCost(u.cost);
-    if (cost) activity.push(paint(`API≈${cost}`, 'magenta'));
-  }
-
-  if (u.linesAdded != null || u.linesRemoved != null) {
-    const added = u.linesAdded ?? 0;
-    const removed = u.linesRemoved ?? 0;
-    if (added !== 0 || removed !== 0) {
-      activity.push(`${paint('+' + added, 'green')}/${paint('-' + removed, 'red')}`);
-    }
-  }
-
-  if (!limits.length && !activity.length) {
-    return paint('cc-usage-monitor: waiting for first turn…', 'gray');
-  }
-
-  const single = [...limits, ...activity].join('  ');
-  if (process.env.CC_USAGE_MONITOR_TWO_LINE && limits.length && activity.length) {
-    return limits.join('  ') + '\n' + activity.join('  ');
-  }
-
-  const width = getTerminalWidth();
-  if (width && visibleLength(single) > width && limits.length && activity.length) {
-    return limits.join('  ') + '\n' + activity.join('  ');
-  }
-  return single;
-}
-
-function getTerminalWidth() {
-  const env = process.env.CC_USAGE_MONITOR_WIDTH;
-  if (env) {
-    const n = parseInt(env, 10);
-    if (n > 0) return n;
-  }
-  if (process.stdout && process.stdout.columns) return process.stdout.columns;
-  if (process.env.COLUMNS) {
-    const n = parseInt(process.env.COLUMNS, 10);
-    if (n > 0) return n;
-  }
-  return 160;
-}
-
-function visibleLength(s) {
-  return String(s).replace(/\x1b\[[0-9;]*m/g, '').length;
+  const keys = ACTIVE_SHOW ?? DEFAULT_SHOW;
+  const parts = keys.map(k => COMPONENTS[k]?.(u, session)).filter(Boolean);
+  if (!parts.length) return paint('cc-usage-monitor: waiting for first turn…', 'gray');
+  return parts.join(SEP);
 }
 
 function renderWindow(label, win) {
   if (!win || win.used == null) return null;
   const p = pct(win.used);
   const color = colorForPercent(win.used);
-  const barStr = paint(bar(win.used), color);
+  const barStr = paint(bar(win.used, INLINE_BAR_WIDTH), color);
   const pctStr = paint(`${p}%`, color);
-  let text = `${label} ${barStr} ${pctStr}`;
+  let text = `${paint(label, 'cyan')} ${barStr} ${pctStr}`;
   if (win.resetsAt) {
     const until = timeUntil(win.resetsAt);
     if (until) text += ` ${paint('(' + until + ')', 'gray')}`;
@@ -141,9 +106,10 @@ function renderContext(u) {
   const color = colorForPercent(u.contextPct);
   const barStr = paint(bar(u.contextPct, INLINE_BAR_WIDTH), color);
   const pctStr = paint(`${pct(u.contextPct)}%`, color);
-  let text = `${paint('ctx', 'gray')} ${barStr} ${pctStr}`;
-  if (u.contextSize && u.inputTokens != null) {
-    const used = formatTokens(u.inputTokens);
+  let text = `${paint('ctx', 'cyan')} ${barStr} ${pctStr}`;
+  if (u.contextSize) {
+    const usedTokens = Math.round(u.contextPct * u.contextSize / 100);
+    const used = formatTokens(usedTokens);
     const total = formatTokens(u.contextSize);
     text += ` ${paint(`(${used}/${total})`, 'gray')}`;
   }
@@ -157,33 +123,26 @@ function renderTurn(u) {
   const parts = [];
   if (inTok) parts.push(`${paint('↑', 'gray')}${paint(inTok, 'cyan')}`);
   if (outTok) parts.push(`${paint('↓', 'gray')}${paint(outTok, 'cyan')}`);
-  let text = parts.join(' ');
-  const hit = cacheHitPercent(u);
-  if (hit != null) {
-    const color = colorForCacheHit(hit);
-    const barStr = paint(bar(hit, INLINE_BAR_WIDTH), color);
-    const pctStr = paint(`${pct(hit)}%`, color);
-    text += ` ${paint('cache', 'gray')} ${barStr} ${pctStr}`;
-  }
-  return text;
+  return parts.join(' ');
 }
 
-function renderSession(session) {
+function renderSession(session, u) {
   if (!session || session.messageCount === 0) return null;
   const totalIn =
     session.cacheReadTokens + session.cacheCreationTokens + session.inputTokens;
   const totalOut = session.outputTokens;
   if (totalIn === 0 && totalOut === 0) return null;
-  const parts = [];
-  parts.push(`${paint('Σ↑', 'gray')}${paint(formatTokens(totalIn), 'cyan')}`);
-  parts.push(`${paint('↓', 'gray')}${paint(formatTokens(totalOut), 'cyan')}`);
-  let text = parts.join(' ');
+  const tokenBlock = `${paint('Σ↑', 'cyan')}${paint(formatTokens(totalIn), 'cyan')} ${paint('↓', 'cyan')}${paint(formatTokens(totalOut), 'cyan')}`;
+  const parts = [tokenBlock];
+  const lines = u ? renderLines(u) : null;
+  if (lines) parts.push(lines);
+  let text = parts.join(SEP);
   if (totalIn > 0) {
     const hit = (session.cacheReadTokens / totalIn) * 100;
     const color = colorForCacheHit(hit);
     const barStr = paint(bar(hit, INLINE_BAR_WIDTH), color);
     const pctStr = paint(`${pct(hit)}%`, color);
-    text += ` ${paint('cache', 'gray')} ${barStr} ${pctStr}`;
+    text += `${SEP}${paint('cache', 'cyan')} ${barStr} ${pctStr}`;
   }
   return text;
 }
