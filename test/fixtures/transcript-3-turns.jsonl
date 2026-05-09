@@ -1,0 +1,13 @@
+{"type":"summary","summary":"warm-up","sessionId":"test-3"}
+{"type":"user","message":{"role":"user","content":"hi"},"sessionId":"test-3","uuid":"u-1"}
+{"type":"assistant","message":{"id":"msg_test_001","role":"assistant","model":"claude-opus-4-7","content":[{"type":"thinking","thinking":"…"}],"usage":{"input_tokens":10,"cache_creation_input_tokens":200,"cache_read_input_tokens":0,"output_tokens":50}},"sessionId":"test-3","uuid":"a-1a"}
+{"type":"assistant","message":{"id":"msg_test_001","role":"assistant","model":"claude-opus-4-7","content":[{"type":"text","text":"hello"}],"usage":{"input_tokens":10,"cache_creation_input_tokens":200,"cache_read_input_tokens":0,"output_tokens":50}},"sessionId":"test-3","uuid":"a-1b"}
+{"type":"user","message":{"role":"user","content":"more"},"sessionId":"test-3","uuid":"u-2"}
+{"type":"assistant","message":{"id":"msg_test_002","role":"assistant","model":"claude-opus-4-7","content":[{"type":"thinking","thinking":"…"}],"usage":{"input_tokens":5,"cache_creation_input_tokens":100,"cache_read_input_tokens":210,"output_tokens":80}},"sessionId":"test-3","uuid":"a-2a"}
+{"type":"assistant","message":{"id":"msg_test_002","role":"assistant","model":"claude-opus-4-7","content":[{"type":"tool_use","name":"Bash"}],"usage":{"input_tokens":5,"cache_creation_input_tokens":100,"cache_read_input_tokens":210,"output_tokens":80}},"sessionId":"test-3","uuid":"a-2b"}
+{"type":"assistant","message":{"id":"msg_test_002","role":"assistant","model":"claude-opus-4-7","content":[{"type":"text","text":"done"}],"usage":{"input_tokens":5,"cache_creation_input_tokens":100,"cache_read_input_tokens":210,"output_tokens":80}},"sessionId":"test-3","uuid":"a-2c"}
+{"type":"tool_result","content":"ok","sessionId":"test-3","uuid":"tr-1"}
+{"type":"assistant","message":{"id":"msg_test_003","role":"assistant","model":"claude-opus-4-7","content":[{"type":"text","text":"final"}],"usage":{"input_tokens":2,"cache_creation_input_tokens":50,"cache_read_input_tokens":315,"output_tokens":120}},"sessionId":"test-3","uuid":"a-3a"}
+{"type":"assistant","message":{"id":"msg_test_003","role":"assistant","model":"claude-opus-4-7","content":[{"type":"text","text":"final"}],"usage":{"input_tokens":2,"cache_creation_input_tokens":50,"cache_read_input_tokens":315,"output_tokens":120}},"sessionId":"test-3","uuid":"a-3b"}
+{"type":"malformed-line-not-valid-json
+{"type":"permission-mode","permissionMode":"default"}

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-08
+
+### Added
+
+- **Session-cumulative token totals** in the Stop-hook box. The hook now reads `transcript_path` from the incoming JSON, walks the JSONL log on disk, and sums tokens (input, output, cache reads, cache creation) across the whole session — deduped by Anthropic message ID so triple-logged content blocks count once.
+- **Session cache-hit rate** alongside the totals — a more stable indicator of prompt-caching efficiency than the latest-turn rate.
+- **Turn count** on the Session line.
+- New `lib/transcript.js` module: streaming JSONL walker with watchdog timeout, 50 MB safety cap, and graceful no-op when the path is missing.
+
+### Changed
+
+- **Stop-hook box layout** restructured into clearer sections: rate-limit windows, then `This turn` (turn-level tokens), then `Session` (cumulative from transcript), then `Cost` (price + lines + model).
+- Box inner width widened to 60 columns to fit the new Session line on long sessions.
+- `Tokens` row renamed to `This turn`; `Session` was the prior cost line and is now its own dedicated cumulative-totals line. The cost/lines/model row is now `Cost`.
+
+### Tests
+
+- 4 new `lib/transcript.js` unit tests (dedup-by-message-id, missing path, empty file, non-assistant entries).
+- Updated Stop-hook integration tests for the new layout, plus a new test verifying the Session line appears only when `transcript_path` is set and skipped otherwise.
+- 40 tests total, all passing.
+
 ## [0.2.0] - 2026-05-08
 
 ### Added

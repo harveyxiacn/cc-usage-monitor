@@ -69,9 +69,27 @@ cost. Pro/Max users typically see API≈ many multiples of their monthly fee
 once they're using Claude Code heavily; the label makes the value of the
 plan visible.
 
-**Caveat**: the token fields above represent the **latest turn / current
-context**, not session-cumulative totals. True cumulative tokens would
-require walking the transcript JSONL on disk; see "Future work" below.
+The statusline tokens reflect the **latest turn / current context**.
+Session-cumulative totals (in the Stop hook only) come from the transcript
+walker — see "Secondary: transcript JSONL" above.
+
+### Secondary: transcript JSONL (Stop hook only)
+
+The Stop hook also walks the session transcript JSONL on disk to compute
+session-cumulative tokens. Path comes from `payload.transcript_path` in the
+incoming JSON.
+
+Critical detail: Claude Code logs each assistant message **multiple times**,
+once per content block (thinking, text, tool_use). Naively summing
+`message.usage` across all assistant entries triple-counts. We dedupe by
+`message.id` (the Anthropic API response ID, unique per response).
+
+The walker has a 50 MB safety cap, a 1500 ms watchdog timeout, and silently
+returns `null` on missing/unreadable files so the Stop hook never blocks
+Claude Code.
+
+We don't walk the transcript from the statusline because it fires on every
+turn — file I/O on the hot path is unnecessary risk.
 
 ### Fallback: ccusage (slash command only)
 
@@ -83,10 +101,11 @@ explicitly runs the command — not in the statusline or hook.
 ## Module layout
 
 ```
-lib/format.js   Pure formatters (bar, color, time, cost). No I/O.
-lib/parse.js    Stdin reader + JSON shape extractor. No formatting.
-bin/statusline.js   Wires lib/parse + lib/format → stdout.
-bin/on-stop.js      Wires lib/parse + lib/format → stderr (boxed).
+lib/format.js     Pure formatters (bar, color, time, cost, tokens). No I/O.
+lib/parse.js      Stdin reader + JSON shape extractor. No formatting.
+lib/transcript.js Streaming JSONL walker (Stop-hook only). I/O.
+bin/statusline.js Wires lib/parse + lib/format → stdout.
+bin/on-stop.js    Wires lib/parse + lib/format + lib/transcript → stderr (boxed).
 ```
 
 Pure-vs-impure split lets us unit-test formatters trivially while still

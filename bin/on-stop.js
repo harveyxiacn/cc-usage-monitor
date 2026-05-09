@@ -12,6 +12,7 @@
  */
 
 const { readStdinJson, extractUsage, cacheHitPercent } = require('../lib/parse');
+const { sumSessionTokens } = require('../lib/transcript');
 const { paint, bar, colorForPercent, timeUntil, formatCost, formatTokens, pct } = require('../lib/format');
 
 async function main() {
@@ -19,11 +20,12 @@ async function main() {
 
   const payload = await readStdinJson();
   const u = extractUsage(payload);
-  const box = render(u);
+  const session = await sumSessionTokens(payload && payload.transcript_path);
+  const box = render(u, session);
   if (box) process.stderr.write(box + '\n');
 }
 
-function render(u) {
+function render(u, session) {
   // If we have nothing useful to say, say nothing — don't spam empty boxes.
   if (
     u.fiveH == null
@@ -31,6 +33,7 @@ function render(u) {
     && u.cost == null
     && u.inputTokens == null
     && u.outputTokens == null
+    && (!session || session.messageCount === 0)
   ) {
     return '';
   }
@@ -45,11 +48,13 @@ function render(u) {
   if (u.sevenD && u.sevenD.used != null) {
     lines.push(boxLine(formatWindow('7d window', u.sevenD)));
   }
-  const tokens = formatTokensLine(u);
-  if (tokens) lines.push(boxLine(tokens));
-  if (u.cost != null || u.model || u.linesAdded != null || u.linesRemoved != null) {
-    lines.push(boxLine(formatSession(u)));
-  }
+  const turn = formatTurnLine(u);
+  if (turn) lines.push(boxLine(turn));
+  const sessionLine = formatSessionLine(session);
+  if (sessionLine) lines.push(boxLine(sessionLine));
+  const cost = formatCostLine(u);
+  if (cost) lines.push(boxLine(cost));
+
   lines.push(boxBottom());
   return lines.join('\n');
 }
@@ -67,7 +72,41 @@ function formatWindow(label, win) {
   return text;
 }
 
-function formatSession(u) {
+function formatTurnLine(u) {
+  const inTok = formatTokens(u.inputTokens);
+  const outTok = formatTokens(u.outputTokens);
+  if (!inTok && !outTok) return null;
+  const bits = [];
+  if (inTok) bits.push(`${paint('↑', 'gray')} ${paint(inTok, 'cyan')}`);
+  if (outTok) bits.push(`${paint('↓', 'gray')} ${paint(outTok, 'cyan')}`);
+  const hit = cacheHitPercent(u);
+  if (hit != null && hit >= 1) {
+    bits.push(paint(`${pct(hit)}% cached`, 'green'));
+  }
+  return `This turn  ${bits.join('  •  ')}`;
+}
+
+function formatSessionLine(session) {
+  if (!session || session.messageCount === 0) return null;
+  const totalIn =
+    session.cacheReadTokens + session.cacheCreationTokens + session.inputTokens;
+  const totalOut = session.outputTokens;
+  if (totalIn === 0 && totalOut === 0) return null;
+  const bits = [];
+  bits.push(`${paint('↑', 'gray')} ${paint(formatTokens(totalIn), 'cyan')}`);
+  bits.push(`${paint('↓', 'gray')} ${paint(formatTokens(totalOut), 'cyan')}`);
+  if (totalIn > 0) {
+    const hitPct = (session.cacheReadTokens / totalIn) * 100;
+    if (hitPct >= 1) {
+      bits.push(paint(`${pct(hitPct)}% cached`, 'green'));
+    }
+  }
+  const turnsLabel = session.messageCount === 1 ? '1 turn' : `${session.messageCount} turns`;
+  bits.push(paint(turnsLabel, 'gray'));
+  return `Session    ${bits.join('  •  ')}`;
+}
+
+function formatCostLine(u) {
   const bits = [];
   if (u.cost != null) {
     const c = formatCost(u.cost);
@@ -81,24 +120,11 @@ function formatSession(u) {
     }
   }
   if (u.model) bits.push(paint(u.model, 'cyan'));
-  return `Session    ${bits.join('  •  ')}`;
+  if (bits.length === 0) return null;
+  return `Cost       ${bits.join('  •  ')}`;
 }
 
-function formatTokensLine(u) {
-  const inTok = formatTokens(u.inputTokens);
-  const outTok = formatTokens(u.outputTokens);
-  if (!inTok && !outTok) return null;
-  const bits = [];
-  if (inTok) bits.push(`${paint('↑', 'gray')} ${paint(inTok, 'cyan')} in`);
-  if (outTok) bits.push(`${paint('↓', 'gray')} ${paint(outTok, 'cyan')} out`);
-  const hit = cacheHitPercent(u);
-  if (hit != null && hit >= 1) {
-    bits.push(paint(`${pct(hit)}% cache hit`, 'green'));
-  }
-  return `Tokens     ${bits.join('  •  ')}`;
-}
-
-const BOX_INNER_WIDTH = 56;
+const BOX_INNER_WIDTH = 60;
 
 function boxTop(title) {
   const titleVisible = stripAnsi(title);

@@ -6,7 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node ≥18](https://img.shields.io/badge/node-%E2%89%A518-43853d.svg)](package.json)
-[![Tests](https://img.shields.io/badge/tests-34%20passing-brightgreen.svg)](#tests)
+[![Tests](https://img.shields.io/badge/tests-40%20passing-brightgreen.svg)](#tests)
 
 ---
 
@@ -18,23 +18,36 @@
 Opus  5h ▰▰▱▱▱▱▱▱▱▱ 24% (2h 14m)  7d ▰▰▰▰▱▱▱▱▱▱ 41% (2d 4h)  ↑16k ↓1.2k (65% cached)  API≈$0.12  +156/-23
 ```
 
+The statusline stays compact because it runs on every assistant turn —
+it only shows the most recent turn's tokens and cache hit (no transcript
+walking). For session-cumulative numbers, see the box below.
+
 **In the CLI after every task (Stop hook):**
 
 ```
-┌─ cc-usage-monitor ───────────────────────────────────────┐
-│ 5h window  ▰▰▰▱▱▱▱▱▱▱▱▱   24%   resets in 2h 14m         │
-│ 7d window  ▰▰▰▰▰▱▱▱▱▱▱▱   41%   resets in 2d 4h          │
-│ Tokens     ↑ 16k in  •  ↓ 1.2k out  •  65% cache hit     │
-│ Session    API≈$0.123  •  +156/-23 lines  •  Opus        │
-└──────────────────────────────────────────────────────────┘
+┌─ cc-usage-monitor ───────────────────────────────────────────┐
+│ 5h window  ▰▰▰▱▱▱▱▱▱▱▱▱   24%   resets in 2h 14m             │
+│ 7d window  ▰▰▰▰▰▱▱▱▱▱▱▱   41%   resets in 2d 4h              │
+│ This turn  ↑ 16k  •  ↓ 1.2k  •  65% cached                   │
+│ Session    ↑ 6.8M  •  ↓ 94k  •  96% cached  •  65 turns      │
+│ Cost       API≈$0.123  •  +156/-23 lines  •  Opus            │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-`API≈` makes it explicit that the cost is what this session would have cost
-on the pay-as-you-go API — a useful way for Pro/Max subscribers to see how
-much value they're getting out of the flat-rate plan.
+The five rows in the box:
 
-The `(65% cached)` figure is the prompt-cache hit rate on the most recent
-turn; the higher it is, the cheaper and faster your session.
+- **5h / 7d window** — rate-limit usage with a colored bar and reset
+  countdown.
+- **This turn** — tokens for the most recent assistant turn plus the
+  prompt-cache hit rate for that turn.
+- **Session** — cumulative tokens across the whole session, computed by
+  walking the transcript JSONL log on disk and deduping by Anthropic
+  message ID. Includes a session-wide cache-hit rate (more stable than
+  the per-turn one) and a turn count.
+- **Cost** — `API≈$X.XX` makes it explicit that the figure is what the
+  session would have cost on the pay-as-you-go API (helpful for Pro/Max
+  subscribers to see the value of the flat-rate plan), plus lines added
+  and removed and the active model.
 
 Plus a `/cc-usage-monitor:usage` slash command for an on-demand detailed
 report (uses [`ccusage`](https://github.com/ryoppippi/ccusage) under the hood).
@@ -57,8 +70,10 @@ of a deep work session, this plugin is for you.
 - **5-hour and 7-day rate-limit usage** with colored bars and reset countdowns.
 - **API-equivalent price** (`API≈$X.XX`) so you know what the session would
   have cost on the pay-as-you-go API.
-- **Token counts** (input / output, with `k` and `M` abbreviations) and the
-  latest-turn **cache-hit percentage**.
+- **Token counts** for the latest turn (statusline) and **session-cumulative
+  totals** (Stop-hook box) computed from the transcript JSONL log, deduped
+  by Anthropic message ID.
+- **Cache-hit percentage** at both turn and session granularity.
 - **Lines added / removed** from the active session.
 - **Zero dependencies** — pure Node.js stdlib, no `node_modules` to install.
 - **Cross-platform** — Windows, macOS, Linux. The same script runs everywhere.
@@ -152,14 +167,17 @@ See [`docs/DESIGN.md`](docs/DESIGN.md) for the full architecture.
 npm test
 ```
 
-Runs **34 tests** covering:
+Runs **40 tests** covering:
 
 - formatter unit tests (bar rendering, time-until, cost formatting, token
   abbreviation, cache-hit math, color thresholds)
+- transcript walker unit tests (dedup-by-message-id, missing path, empty
+  file, non-assistant entries)
 - statusline integration tests against five fixture JSON payloads (full,
   high-usage, no-rate-limits, missing-cost, no-cache)
-- Stop-hook integration tests (output goes to stderr, `CC_USAGE_MONITOR_QUIET`
-  silences output, tokens line shows when present)
+- Stop-hook integration tests (output goes to stderr, layout sections,
+  Session line appears only when `transcript_path` is provided,
+  `CC_USAGE_MONITOR_QUIET` silences output)
 
 All tests use Node's built-in `node:test` runner — no jest, no mocha, no
 external deps.
