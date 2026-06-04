@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-06-04
+
+### Fixed
+
+- **Marketplace install** — `marketplace.json` plugin source `"."` → `"./"`; the
+  current Claude Code marketplace schema rejects `"."`, which blocked
+  `claude plugin install` (README Option 3).
+- **Two-line wrapping actually works now** — the `CC_USAGE_MONITOR_WIDTH` /
+  `CC_USAGE_MONITOR_TWO_LINE` layout documented in 0.6.0 had been left
+  unimplemented in `render()`; restored it (limits group on line 1, activity
+  group on line 2).
+- **Per-turn cache-hit bar** restored in the statusline `turn` component
+  (suppressed at 0%), matching the 0.6.0 changelog and the Stop-hook
+  "This turn" row.
+- **Statusline context size** now shows actual input tokens (`(16k/200k)`)
+  instead of `used_percentage × window size`, consistent with the Stop-hook
+  box and the README.
+- **Stop-hook box** bottom border was 2 columns too wide, misaligning the
+  corner; now flush.
+
+### Added
+
+- `.gitattributes` pinning `eol=lf` so line endings stay LF regardless of
+  contributor OS (the project was originally developed on Windows).
+
 ## [0.6.0] - 2026-05-09
 
 ### Added
