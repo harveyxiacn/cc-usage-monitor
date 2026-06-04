@@ -80,11 +80,37 @@ const COMPONENTS = {
   lines:   (u)          => renderLines(u),
 };
 
+// Components that describe limits/state (line 1 when wrapped); everything else
+// is "activity" (tokens/session/cost/lines) and goes on line 2.
+const LIMITS_KEYS = new Set(['model', 'ctx', '5h', '7d']);
+
+function visibleLength(s) {
+  return s.replace(/\x1b\[[0-9;]*m/g, '').length;
+}
+
 function render(u, session) {
   const keys = ACTIVE_SHOW ?? DEFAULT_SHOW;
-  const parts = keys.map(k => COMPONENTS[k]?.(u, session)).filter(Boolean);
-  if (!parts.length) return paint('cc-usage-monitor: waiting for first turn…', 'gray');
-  return parts.join(SEP);
+  const rendered = keys
+    .map(k => ({ k, text: COMPONENTS[k]?.(u, session) }))
+    .filter(x => x.text);
+  if (!rendered.length) return paint('cc-usage-monitor: waiting for first turn…', 'gray');
+
+  const oneLine = rendered.map(x => x.text).join(SEP);
+
+  // Optionally wrap to two lines: rate-limit/context group first, activity
+  // group second. Triggered by CC_USAGE_MONITOR_TWO_LINE, or automatically
+  // when the visible width exceeds CC_USAGE_MONITOR_WIDTH / the terminal
+  // width / 160 (whichever is found first).
+  const forceTwoLine = !!process.env.CC_USAGE_MONITOR_TWO_LINE;
+  const width = Number(process.env.CC_USAGE_MONITOR_WIDTH)
+    || process.stdout.columns
+    || Number(process.env.COLUMNS)
+    || 160;
+  if (!forceTwoLine && visibleLength(oneLine) <= width) return oneLine;
+
+  const line1 = rendered.filter(x => LIMITS_KEYS.has(x.k)).map(x => x.text).join(SEP);
+  const line2 = rendered.filter(x => !LIMITS_KEYS.has(x.k)).map(x => x.text).join(SEP);
+  return (line1 && line2) ? `${line1}\n${line2}` : (line1 || line2);
 }
 
 function renderWindow(label, win) {
@@ -107,9 +133,8 @@ function renderContext(u) {
   const barStr = paint(bar(u.contextPct, INLINE_BAR_WIDTH), color);
   const pctStr = paint(`${pct(u.contextPct)}%`, color);
   let text = `${paint('ctx', 'cyan')} ${barStr} ${pctStr}`;
-  if (u.contextSize) {
-    const usedTokens = Math.round(u.contextPct * u.contextSize / 100);
-    const used = formatTokens(usedTokens);
+  if (u.contextSize && u.inputTokens != null) {
+    const used = formatTokens(u.inputTokens);
     const total = formatTokens(u.contextSize);
     text += ` ${paint(`(${used}/${total})`, 'gray')}`;
   }
@@ -123,7 +148,17 @@ function renderTurn(u) {
   const parts = [];
   if (inTok) parts.push(`${paint('↑', 'gray')}${paint(inTok, 'cyan')}`);
   if (outTok) parts.push(`${paint('↓', 'gray')}${paint(outTok, 'cyan')}`);
-  return parts.join(' ');
+  let text = parts.join(' ');
+  // Per-turn cache-hit bar, consistent with the Stop-hook "This turn" row.
+  // Suppressed when there's no cache data or nothing was reused (0%).
+  const hit = cacheHitPercent(u);
+  if (hit != null && hit > 0) {
+    const color = colorForCacheHit(hit);
+    const barStr = paint(bar(hit, INLINE_BAR_WIDTH), color);
+    const pctStr = paint(`${pct(hit)}%`, color);
+    text += ` ${paint('cache', 'cyan')} ${barStr} ${pctStr}`;
+  }
+  return text;
 }
 
 function renderSession(session, u) {

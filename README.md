@@ -206,7 +206,7 @@ CC_USAGE_MONITOR_SHOW=model,ctx,5h,7d,session,cost
 | `ctx` | Context window usage bar + % + `(used/total)` | ✓ |
 | `5h` | 5-hour rate-limit bar + % + reset countdown | ✓ |
 | `7d` | 7-day rate-limit bar + % + reset countdown | ✓ |
-| `turn` | Current-turn input/output token counts | |
+| `turn` | Current-turn input/output tokens + cache-hit bar | |
 | `session` | Session-cumulative tokens · lines added/removed · cache-hit bar | ✓ |
 | `cost` | API-equivalent cost (`API≈$X.XX`) | ✓ |
 | `lines` | Lines added/removed only (standalone, without session tokens) | |

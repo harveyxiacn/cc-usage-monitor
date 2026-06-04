@@ -154,7 +154,7 @@ function boxTop(title) {
 }
 
 function boxBottom() {
-  return paint('└' + '─'.repeat(BOX_INNER_WIDTH + 4) + '┘', 'gray');
+  return paint('└' + '─'.repeat(BOX_INNER_WIDTH + 2) + '┘', 'gray');
 }
 
 function boxLine(content) {

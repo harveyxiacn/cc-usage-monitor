@@ -11,7 +11,7 @@
     {
       "name": "cc-usage-monitor",
       "description": "Show 5-hour and 7-day Claude Code rate-limit usage in the statusline and after every task.",
-      "source": ".",
+      "source": "./",
       "category": "productivity",
       "version": "0.6.0",
       "author": {

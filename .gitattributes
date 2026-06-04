@@ -1,0 +1,11 @@
+# Normalize all text files to LF in the repository, regardless of the OS a
+# contributor commits from. The project was originally developed on Windows;
+# this prevents CRLF from leaking into the source and shipping to macOS/Linux
+# users. .editorconfig advises editors; .gitattributes enforces it at the VCS layer.
+* text=auto eol=lf
+
+# Be explicit for the file types we ship.
+*.js     text eol=lf
+*.json   text eol=lf
+*.jsonl  text eol=lf
+*.md     text eol=lf

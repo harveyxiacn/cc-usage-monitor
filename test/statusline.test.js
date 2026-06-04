@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { runScript, STATUSLINE, withTranscript } = require('./helpers');
 
 test('statusline: full fixture shows model + 5h + 7d + tokens + API≈cost + lines', async () => {
-  const { stdout, code } = await runScript(STATUSLINE, 'full.json');
+  const { stdout, code } = await runScript(STATUSLINE, 'full.json', { CC_USAGE_MONITOR_SHOW: 'model,ctx,5h,7d,turn,session,cost' });
   assert.equal(code, 0);
   assert.match(stdout, /Opus/);
   assert.match(stdout, /5h /);
@@ -22,7 +22,7 @@ test('statusline: full fixture shows model + 5h + 7d + tokens + API≈cost + lin
 });
 
 test('statusline: high-usage fixture shows 95%, 88%, big tokens, API≈cost', async () => {
-  const { stdout, code } = await runScript(STATUSLINE, 'high-usage.json');
+  const { stdout, code } = await runScript(STATUSLINE, 'high-usage.json', { CC_USAGE_MONITOR_SHOW: 'model,ctx,5h,7d,turn,cost' });
   assert.equal(code, 0);
   assert.match(stdout, /Sonnet/);
   assert.match(stdout, /95%/);
@@ -53,7 +53,7 @@ test('statusline: missing-cost fixture shows rate limits but no cost', async () 
 });
 
 test('statusline: no-cache fixture shows tokens but suppresses 0% cache hit', async () => {
-  const { stdout, code } = await runScript(STATUSLINE, 'no-cache.json');
+  const { stdout, code } = await runScript(STATUSLINE, 'no-cache.json', { CC_USAGE_MONITOR_SHOW: 'model,ctx,5h,7d,turn,cost' });
   assert.equal(code, 0);
   assert.match(stdout, /↑8\.0k/);
   assert.match(stdout, /↓600/);
@@ -97,6 +97,7 @@ test('statusline: no-rate-limits fixture omits ctx (no context_window data)', as
 test('statusline: CC_USAGE_MONITOR_WIDTH=80 wraps to two lines', async () => {
   const { stdout, code } = await runScript(STATUSLINE, 'full.json', {
     CC_USAGE_MONITOR_WIDTH: '80',
+    CC_USAGE_MONITOR_SHOW: 'model,ctx,5h,7d,turn,cost',
   });
   assert.equal(code, 0);
   assert.match(stdout, /\n/);
@@ -131,7 +132,7 @@ test('statusline: CC_USAGE_MONITOR_TWO_LINE=1 always wraps', async () => {
 });
 
 test('statusline: full fixture has cache bar after tokens', async () => {
-  const { stdout, code } = await runScript(STATUSLINE, 'full.json');
+  const { stdout, code } = await runScript(STATUSLINE, 'full.json', { CC_USAGE_MONITOR_SHOW: 'model,ctx,5h,7d,turn,cost' });
   assert.equal(code, 0);
   // Pattern: ↑..k ↓..k cache <bar> 65%
   assert.match(stdout, /cache ▰{3}▱{2} 65%/);
