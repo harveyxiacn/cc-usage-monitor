@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-06-10
+
+### Added
+
+- **Fable 5 (and full current-model) support** via the new `lib/pricing.js` model registry:
+  - **Display-name fallback** — when Claude Code sends only a raw model ID (e.g. `claude-fable-5[1m]`), both surfaces now render the friendly name (`Fable 5`) instead of the raw ID. Bracket suffixes like `[1m]`, date suffixes, and Bedrock-style `anthropic.` prefixes are all handled. Claude Code's own `display_name` still wins when present.
+  - **Pricing table** verified against the live platform.claude.com pricing page (2026-06): Fable 5 / Mythos 5 ($10/$50 per MTok), Opus 4.8–4.5 ($5/$25), Opus 4.1/4 ($15/$75), Sonnet 4.x ($3/$15), Haiku 4.5 ($1/$5), plus legacy Haiku/Sonnet/Opus 3 models and fast-mode Opus premiums (Opus 4.8 Fast $10/$50, Opus 4.7/4.6 Fast $30/$150). Cache multipliers follow the official rules: reads 0.1×, 5-minute writes 1.25×, 1-hour writes 2× — and stack on fast-mode pricing. The 1M context window on Fable 5 / Opus 4.8–4.6 / Sonnet 4.6 has no long-context premium, so none is modelled.
+  - **Computed API-equivalent cost** — when Claude Code omits `cost.total_cost_usd`, both surfaces now compute the session cost from per-model transcript token totals, marked as an estimate (`API≈~$X` in the statusline, `API≈$X (est.)` in the box). A computed figure is only shown when every model in the session is priced and the transcript walk completed in full (no silent undercounting). Unknown future model IDs deliberately price as *unknown* rather than guessing — e.g. a hypothetical `claude-opus-4-9` is not priced at the old Opus 4 rate.
+  - **Per-model cost breakdown** in the Stop-hook box (`Models  Fable 5 $0.090  •  Haiku 4.5 $0.011`) for mixed-model sessions — e.g. main loop on Fable 5 with subagents on Haiku. Sorted by cost, shown only when the session used ≥ 2 models.
+- `lib/transcript.js` now buckets token totals **per model** (`models` field) and tracks the 1-hour cache-write subset (`usage.cache_creation.ephemeral_1h_input_tokens`) so the 2× TTL rate is billed correctly.
+- **Interactive display configuration** via the new `/cc-usage-monitor:config` slash command: the agent presents a checklist of statusline components and bar styles (or picks a sensible layout when asked to), and persists the choice to `~/.claude/cc-usage-monitor.json` via the new `bin/config.js` CLI (`get` / `set` / `reset`). Settings take effect on the next assistant turn.
+- New `lib/config.js`: validated config file covering `show`, `barStyle`, `twoLine`, `width`, `quiet`, and `noSession`. The file fills in any `CC_USAGE_MONITOR_*` env var that isn't already set — env vars keep priority, so existing setups are unaffected. Override the file location with `CC_USAGE_MONITOR_CONFIG`.
+
+### Changed
+
+- The Stop-hook box now **auto-widens** to its longest row, so long Session / Models / Cost lines widen the frame instead of breaking the right border.
+
+### Fixed
+
+- A custom `CC_USAGE_MONITOR_SHOW` order is rendered exactly as written when everything fits on one line; the limits/activity grouping now applies only when wrapping.
+- `CC_USAGE_MONITOR_TWO_LINE=0` (or `=false`) no longer force-*enables* the two-line layout.
+- The statusline / Stop-hook process no longer lingers when Claude Code opens stdin but never closes it (stdin is destroyed after the 1500 ms watchdog fires).
+- Test harness now strips `CC_USAGE_MONITOR_*` variables from the developer's shell, so local customisations can't change test results.
+
+### Tests
+
+- Pricing unit tests (registry lookup incl. legacy/date-suffixed/future IDs, Fable 5 / fast-mode / 1h-cache math, incomplete-session guards), per-model transcript bucketing and TTL-breakdown derivation, integration tests for the Fable 5 fixture on both surfaces (display-name fallback, computed cost with `~`/`(est.)` markers, reported-cost precedence, Models breakdown), `CC_USAGE_MONITOR_SHOW` order preservation, `TWO_LINE=0`, and config tests (validation, env-over-file precedence, CLI get/set/reset, quiet-via-config).
+
 ## [0.6.1] - 2026-06-04
 
 ### Fixed

@@ -8,11 +8,16 @@
  * boxed usage summary to stderr so the user sees it inline in the CLI
  * without it leaking into the assistant transcript.
  *
- * Disable by setting CC_USAGE_MONITOR_QUIET=1.
+ * Disable by setting CC_USAGE_MONITOR_QUIET=1 (or `quiet: true` in the
+ * config file written by /cc-usage-monitor:config — env wins on conflict).
  */
+
+// Must run before any CC_USAGE_MONITOR_* env var is read.
+require('../lib/config').applyConfigToEnv();
 
 const { readStdinJson, extractUsage, cacheHitPercent } = require('../lib/parse');
 const { sumSessionTokens } = require('../lib/transcript');
+const { sessionCost } = require('../lib/pricing');
 const { paint, bar, colorForPercent, colorForCacheHit, timeUntil, formatCost, formatTokens, pct } = require('../lib/format');
 
 async function main() {
@@ -38,27 +43,37 @@ function render(u, session) {
     return '';
   }
 
-  const lines = [];
-  const title = paint(' cc-usage-monitor ', 'bold');
-  lines.push(boxTop(title));
-
+  const contents = [];
   if (u.fiveH && u.fiveH.used != null) {
-    lines.push(boxLine(formatWindow('5h window', u.fiveH)));
+    contents.push(formatWindow('5h window', u.fiveH));
   }
   if (u.sevenD && u.sevenD.used != null) {
-    lines.push(boxLine(formatWindow('7d window', u.sevenD)));
+    contents.push(formatWindow('7d window', u.sevenD));
   }
   const ctx = formatContextLine(u);
-  if (ctx) lines.push(boxLine(ctx));
+  if (ctx) contents.push(ctx);
   const turn = formatTurnLine(u);
-  if (turn) lines.push(boxLine(turn));
+  if (turn) contents.push(turn);
   const sessionLine = formatSessionLine(session);
-  if (sessionLine) lines.push(boxLine(sessionLine));
-  const cost = formatCostLine(u);
-  if (cost) lines.push(boxLine(cost));
+  if (sessionLine) contents.push(sessionLine);
+  const computed = session && !session.truncated ? sessionCost(session.models) : null;
+  const models = formatModelsLine(computed);
+  if (models) contents.push(models);
+  const cost = formatCostLine(u, computed);
+  if (cost) contents.push(cost);
 
-  lines.push(boxBottom());
-  return lines.join('\n');
+  // Size the box to the longest row so a long Session/Models/Cost line
+  // widens the whole frame instead of breaking the right border.
+  const title = paint(' cc-usage-monitor ', 'bold');
+  const innerWidth = Math.max(
+    BOX_MIN_INNER_WIDTH,
+    ...contents.map((c) => stripAnsi(c).length)
+  );
+  return [
+    boxTop(title, innerWidth),
+    ...contents.map((c) => boxLine(c, innerWidth)),
+    boxBottom(innerWidth),
+  ].join('\n');
 }
 
 function formatWindow(label, win) {
@@ -127,11 +142,30 @@ function formatSessionLine(session) {
   return `Session    ${bits.join('  •  ')}`;
 }
 
-function formatCostLine(u) {
+/**
+ * Per-model cost breakdown, computed from transcript token buckets via
+ * lib/pricing. Only shown for mixed-model sessions (e.g. main loop on
+ * Fable 5, subagents on Haiku) — for single-model sessions the Cost line
+ * already tells the whole story.
+ */
+function formatModelsLine(computed) {
+  if (!computed || !computed.complete || computed.perModel.length < 2) return null;
+  const bits = computed.perModel.slice(0, 3).map(
+    (m) => `${paint(m.name, 'cyan')} ${paint(formatCost(m.usd), 'magenta')}`
+  );
+  return `Models     ${bits.join('  •  ')}`;
+}
+
+function formatCostLine(u, computed) {
   const bits = [];
   if (u.cost != null) {
     const c = formatCost(u.cost);
     if (c) bits.push(paint(`API≈${c}`, 'magenta'));
+  } else if (computed && computed.complete) {
+    // Claude Code didn't report a cost — show the API-equivalent figure
+    // computed from per-model transcript totals and our pricing table.
+    const c = formatCost(computed.usd);
+    if (c) bits.push(`${paint(`API≈${c}`, 'magenta')} ${paint('(est.)', 'gray')}`);
   }
   if (u.linesAdded != null || u.linesRemoved != null) {
     const added = u.linesAdded ?? 0;
@@ -145,21 +179,22 @@ function formatCostLine(u) {
   return `Cost       ${bits.join('  •  ')}`;
 }
 
-const BOX_INNER_WIDTH = 60;
+const BOX_MIN_INNER_WIDTH = 60;
 
-function boxTop(title) {
+function boxTop(title, innerWidth) {
   const titleVisible = stripAnsi(title);
-  const filler = '─'.repeat(Math.max(0, BOX_INNER_WIDTH - titleVisible.length));
+  const filler = '─'.repeat(Math.max(0, innerWidth - titleVisible.length));
   return paint(`┌─${title}${filler}─┐`, 'gray');
 }
 
-function boxBottom() {
-  return paint('└' + '─'.repeat(BOX_INNER_WIDTH + 2) + '┘', 'gray');
+function boxBottom(innerWidth) {
+  // '│ ' + content + ' │' is innerWidth + 4 columns; match it.
+  return paint('└' + '─'.repeat(innerWidth + 2) + '┘', 'gray');
 }
 
-function boxLine(content) {
+function boxLine(content, innerWidth) {
   const visible = stripAnsi(content);
-  const padding = Math.max(0, BOX_INNER_WIDTH - visible.length);
+  const padding = Math.max(0, innerWidth - visible.length);
   return paint('│ ', 'gray') + content + ' '.repeat(padding) + paint(' │', 'gray');
 }
 

@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { runScript, STATUSLINE, withTranscript } = require('./helpers');
+const { runScript, STATUSLINE, withTranscript, withFableTranscript } = require('./helpers');
 
 test('statusline: full fixture shows model + 5h + 7d + tokens + API≈cost + lines', async () => {
   const { stdout, code } = await runScript(STATUSLINE, 'full.json', { CC_USAGE_MONITOR_SHOW: 'model,ctx,5h,7d,turn,session,cost' });
@@ -136,6 +136,60 @@ test('statusline: full fixture has cache bar after tokens', async () => {
   assert.equal(code, 0);
   // Pattern: ↑..k ↓..k cache <bar> 65%
   assert.match(stdout, /cache ▰{3}▱{2} 65%/);
+});
+
+test('statusline: fable fixture maps raw model id to "Fable 5" and shows 1M context', async () => {
+  const { stdout, code } = await runScript(STATUSLINE, 'fable.json');
+  assert.equal(code, 0);
+  // No display_name in the fixture — name comes from the pricing registry,
+  // with the [1m] long-context suffix stripped.
+  assert.match(stdout, /Fable 5/);
+  assert.doesNotMatch(stdout, /\[1m\]/);
+  assert.match(stdout, /\(320k\/1\.0M\)/);
+  // No total_cost_usd and no transcript — no cost segment at all.
+  assert.doesNotMatch(stdout, /\$/);
+});
+
+test('statusline: fable fixture + transcript computes API≈ cost from pricing table', async () => {
+  const { stdout, code } = await runScript(STATUSLINE, 'fable.json', {}, withFableTranscript);
+  assert.equal(code, 0);
+  // Fable 5: 150×$10 + 1200×$50 + 2100×$1 + 2100×$12.5 per MTok = $0.08985
+  // Haiku 4.5: 1200×$1 + 2000×$5 per MTok = $0.0112
+  // Total $0.10105 → "$0.101", with ~ marking it as computed, not reported.
+  assert.match(stdout, /API≈~\$0\.101/);
+});
+
+test('statusline: reported cost wins over computed cost and has no ~ marker', async () => {
+  const { stdout, code } = await runScript(STATUSLINE, 'fable.json', {}, (p) => {
+    withFableTranscript(p);
+    p.cost.total_cost_usd = 9.99;
+    return p;
+  });
+  assert.equal(code, 0);
+  assert.match(stdout, /API≈\$9\.99/);
+  assert.doesNotMatch(stdout, /~\$/);
+  assert.doesNotMatch(stdout, /\$0\.101/);
+});
+
+test('statusline: CC_USAGE_MONITOR_SHOW order is preserved on a single line', async () => {
+  const { stdout, code } = await runScript(STATUSLINE, 'full.json', {
+    CC_USAGE_MONITOR_SHOW: 'cost,model,ctx',
+  });
+  assert.equal(code, 0);
+  const cost = stdout.indexOf('API≈');
+  const model = stdout.indexOf('Opus');
+  const ctx = stdout.indexOf('ctx ');
+  assert.ok(cost >= 0 && model >= 0 && ctx >= 0, stdout);
+  assert.ok(cost < model && model < ctx, `expected cost<model<ctx order in: ${stdout}`);
+});
+
+test('statusline: CC_USAGE_MONITOR_TWO_LINE=0 keeps a single line', async () => {
+  const { stdout, code } = await runScript(STATUSLINE, 'full.json', {
+    CC_USAGE_MONITOR_TWO_LINE: '0',
+    CC_USAGE_MONITOR_WIDTH: '999',
+  });
+  assert.equal(code, 0);
+  assert.doesNotMatch(stdout, /\n/);
 });
 
 test('statusline: empty stdin produces a friendly waiting message and exits 0', async () => {

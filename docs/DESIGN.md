@@ -23,11 +23,15 @@
 | Statusline (`bin/statusline.js`) | Every assistant turn | stdout, single line |
 | Stop hook (`bin/on-stop.js`)     | When Claude finishes a task | stderr, multi-line box |
 | Slash command (`commands/usage.md`) | User invokes `/cc-usage-monitor:usage` | conversation |
+| Slash command (`commands/config.md`) | User invokes `/cc-usage-monitor:config` | conversation (writes config file via `bin/config.js`) |
 
-The statusline runs **constantly** so it's pure JSON parsing — no shell-outs,
-no filesystem reads. The Stop hook runs **after each task** which is
-infrequent enough that we could shell out to `ccusage`, but in practice we
-don't need to: the same JSON shape is delivered to both surfaces.
+The statusline runs **constantly**, so it does no shell-outs and only two
+tightly bounded filesystem reads: the small config file (one read,
+try/catch-guarded) and the transcript walk for session totals (watchdog +
+size cap; skippable via `CC_USAGE_MONITOR_NO_SESSION=1`). The Stop hook runs
+**after each task**, which is infrequent enough that we could shell out to
+`ccusage`, but in practice we don't need to: the same JSON shape is
+delivered to both surfaces.
 
 ## Data sources
 
@@ -73,11 +77,12 @@ The statusline tokens reflect the **latest turn / current context**.
 Session-cumulative totals (in the Stop hook only) come from the transcript
 walker — see "Secondary: transcript JSONL" above.
 
-### Secondary: transcript JSONL (Stop hook only)
+### Secondary: transcript JSONL
 
-The Stop hook also walks the session transcript JSONL on disk to compute
-session-cumulative tokens. Path comes from `payload.transcript_path` in the
-incoming JSON.
+Both surfaces walk the session transcript JSONL on disk to compute
+session-cumulative tokens (the statusline since 0.4.0; skip it there with
+`CC_USAGE_MONITOR_NO_SESSION=1`). Path comes from `payload.transcript_path`
+in the incoming JSON.
 
 Critical detail: Claude Code logs each assistant message **multiple times**,
 once per content block (thinking, text, tool_use). Naively summing
@@ -91,6 +96,45 @@ Claude Code.
 We don't walk the transcript from the statusline because it fires on every
 turn — file I/O on the hot path is unnecessary risk.
 
+### Tertiary: bundled pricing table (`lib/pricing.js`)
+
+`cost.total_cost_usd` is whatever Claude Code reports. When it's absent we
+compute an API-equivalent figure ourselves: the transcript walker buckets
+tokens **per model** (each assistant entry carries `message.model`), and
+`lib/pricing.js` prices each bucket with rates verified against the live
+platform.claude.com pricing page (snapshot 2026-06):
+
+| Model family | Input $/MTok | Output $/MTok |
+| --- | --- | --- |
+| Fable 5 / Mythos 5 | 10 | 50 |
+| Opus 4.8 / 4.7 / 4.6 / 4.5 | 5 | 25 |
+| Opus 4.8 Fast | 10 | 50 |
+| Opus 4.7 / 4.6 Fast | 30 | 150 |
+| Opus 4.1 / 4 | 15 | 75 |
+| Sonnet 4.x / 3.x | 3 | 15 |
+| Opus 3 | 15 | 75 |
+| Haiku 4.5 | 1 | 5 |
+| Haiku 3.5 | 0.80 | 4 |
+| Haiku 3 | 0.25 | 1.25 |
+
+Cache multipliers follow the official rules and stack on fast-mode rates:
+reads 0.1× input, 5-minute writes 1.25×, 1-hour writes 2× (the walker reads
+the `usage.cache_creation.ephemeral_1h_input_tokens` breakdown when Claude
+Code records it; otherwise everything is priced at the 5-minute rate, which
+matches Claude Code's default TTL). The 1M context window on Fable 5 /
+Opus 4.8–4.6 / Sonnet 4.6 carries no long-context premium, so none is
+modelled.
+
+Model IDs resolve by substring on a normalised ID (lowercased, bracket
+suffixes like `[1m]` stripped), so date-suffixed and Bedrock-prefixed IDs
+match too. The same registry supplies friendly display names when Claude
+Code omits `model.display_name`.
+
+Two honesty rules: a computed figure is only shown when **every** model in
+the session is priced (a partial sum would silently undercount), and the
+Stop-hook box labels it `(est.)` to distinguish it from a Claude
+Code-reported cost. Unknown models return `null`, never `0`.
+
 ### Fallback: ccusage (slash command only)
 
 The `/cc-usage-monitor:usage` slash command shells out to
@@ -103,10 +147,19 @@ explicitly runs the command — not in the statusline or hook.
 ```
 lib/format.js     Pure formatters (bar, color, time, cost, tokens). No I/O.
 lib/parse.js      Stdin reader + JSON shape extractor. No formatting.
-lib/transcript.js Streaming JSONL walker (Stop-hook only). I/O.
-bin/statusline.js Wires lib/parse + lib/format → stdout.
-bin/on-stop.js    Wires lib/parse + lib/format + lib/transcript → stderr (boxed).
+lib/pricing.js    Model registry: display names + per-MTok pricing. Pure data + math.
+lib/config.js     Persistent user config (~/.claude/cc-usage-monitor.json). Small I/O.
+lib/transcript.js Streaming JSONL walker with per-model token buckets. I/O.
+bin/statusline.js Wires lib/parse + lib/format (+ lib/pricing fallback) → stdout.
+bin/on-stop.js    Wires lib/parse + lib/format + lib/transcript + lib/pricing → stderr (boxed).
+bin/config.js     CLI for /cc-usage-monitor:config (get / set / reset).
 ```
+
+The config file bridges into the existing env-var interface: at process
+start, `applyConfigToEnv()` fills in any `CC_USAGE_MONITOR_*` variable that
+isn't already set. Env vars therefore always win, the file is read exactly
+once per spawn (one small read, try/catch-guarded), and the rest of the code
+keeps a single configuration surface.
 
 Pure-vs-impure split lets us unit-test formatters trivially while still
 having end-to-end tests that spawn the real scripts with fixture stdin.
@@ -122,8 +175,11 @@ having end-to-end tests that spawn the real scripts with fixture stdin.
 
 Bar width:
 
-- Statusline: 10 cells (compact, fits in tight terminals)
+- Statusline: 5 cells (compact, fits in tight terminals)
 - Stop hook box: 12 cells (slightly more headroom inside the box)
+
+The Stop-hook box is at least 60 columns wide inside, growing to fit the
+longest row so the right border always lines up.
 
 Time-until-reset: `Xd Yh` if ≥ 1 day, `Xh Ym` if ≥ 1 hour, else `Xm`. Past
 resets render as `now`.
@@ -151,11 +207,13 @@ hook (we don't print empty boxes).
 
 | Test layer | What we verify |
 | ---------- | -------------- |
-| `format.test.js` | Pure formatters: bar widths, time math, cost rounding, color buckets. 15 cases. |
-| `statusline.test.js` | Pipe each fixture into the real `bin/statusline.js`; assert stdout content. 5 cases. |
-| `on-stop.test.js`    | Same approach for the Stop hook; verify output goes to stderr; verify `CC_USAGE_MONITOR_QUIET=1` silences. 5 cases. |
+| `format.test.js` | Pure formatters: bar widths, time math, cost rounding, color buckets. |
+| `pricing.test.js` | Model-ID resolution (suffixes, prefixes, specificity ordering), per-model rates, cache-write TTL math, session totals and incompleteness guards. |
+| `transcript.test.js` | Walker: dedup-by-message-id, per-model buckets, missing/empty files. |
+| `statusline.test.js` | Pipe each fixture into the real `bin/statusline.js`; assert stdout content, wrapping, and computed-cost fallback. |
+| `on-stop.test.js`    | Same approach for the Stop hook; verify output goes to stderr, the Models breakdown, `(est.)` labelling, and `CC_USAGE_MONITOR_QUIET=1`. |
 
-Total: 25 tests, runtime ≈ 0.5 s, no external deps.
+Total: 90 tests, runtime ≈ 1 s, no external deps.
 
 ## Future work
 

@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { runScript, ON_STOP, withTranscript } = require('./helpers');
+const { runScript, ON_STOP, withTranscript, withFableTranscript } = require('./helpers');
 
 test('on-stop: full fixture prints all five sections on stderr', async () => {
   const { stdout, stderr, code } = await runScript(ON_STOP, 'full.json');
@@ -97,6 +97,37 @@ test('on-stop: full fixture + transcript has cache hit bar in Session line too',
   assert.equal(code, 0);
   // Session cache 59% should render as ▰▰▰▰▰▰▰▱▱▱▱▱ 59% cached
   assert.match(stderr, /▰{7}▱{5} {1,2}59% cached/);
+});
+
+test('on-stop: fable fixture + transcript shows estimated cost and per-model breakdown', async () => {
+  const { stderr, code } = await runScript(ON_STOP, 'fable.json', {}, withFableTranscript);
+  assert.equal(code, 0);
+  // Raw "claude-fable-5[1m]" id renders as the friendly name.
+  assert.match(stderr, /Fable 5/);
+  // No total_cost_usd in the fixture — cost is computed from the pricing
+  // table and flagged as an estimate.
+  assert.match(stderr, /API≈\$0\.101 \(est\.\)/);
+  // Mixed-model session → Models breakdown, ordered by cost.
+  assert.match(stderr, /Models/);
+  assert.match(stderr, /Fable 5 \$0\.090/);
+  assert.match(stderr, /Haiku 4\.5 \$0\.011/);
+});
+
+test('on-stop: single-model session omits the Models breakdown line', async () => {
+  const { stderr, code } = await runScript(ON_STOP, 'full.json', {}, withTranscript);
+  assert.equal(code, 0);
+  assert.doesNotMatch(stderr, /Models/);
+});
+
+test('on-stop: reported cost wins and is not marked as estimate', async () => {
+  const { stderr, code } = await runScript(ON_STOP, 'fable.json', {}, (p) => {
+    withFableTranscript(p);
+    p.cost.total_cost_usd = 1.5;
+    return p;
+  });
+  assert.equal(code, 0);
+  assert.match(stderr, /API≈\$1\.50/);
+  assert.doesNotMatch(stderr, /est\./);
 });
 
 test('on-stop: missing transcript_path does NOT print Session line', async () => {

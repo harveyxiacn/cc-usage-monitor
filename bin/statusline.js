@@ -12,7 +12,8 @@
  *   - context-window utilisation
  *   - latest-turn tokens (with cache-hit %)
  *   - session-cumulative tokens (computed from transcript JSONL on disk)
- *   - API-equivalent cost
+ *   - API-equivalent cost (reported by Claude Code, or computed from the
+ *     transcript via lib/pricing when Claude Code omits it)
  *   - lines added / removed this session
  *
  * Configured in settings.json:
@@ -22,6 +23,7 @@
  *   }
  *
  * Environment toggles:
+ *   CC_USAGE_MONITOR_SHOW=a,b,c     choose which components appear, in order
  *   CC_USAGE_MONITOR_NO_SESSION=1   skip the transcript walk (no Σ segment)
  *   CC_USAGE_MONITOR_WIDTH=N        wrap to a second line if the visible
  *                                   width would exceed N columns. Defaults
@@ -29,10 +31,17 @@
  *                                   160 — whichever is found first.
  *   CC_USAGE_MONITOR_TWO_LINE=1     always wrap, regardless of width.
  *   NO_COLOR=1 / FORCE_COLOR=0      disable colors
+ *
+ * The same settings can be persisted via /cc-usage-monitor:config — the
+ * config file fills in any env var not already set (env always wins).
  */
+
+// Must run before any CC_USAGE_MONITOR_* env var is read below.
+require('../lib/config').applyConfigToEnv();
 
 const { readStdinJson, extractUsage, cacheHitPercent } = require('../lib/parse');
 const { sumSessionTokens } = require('../lib/transcript');
+const { sessionCost } = require('../lib/pricing');
 const { paint, bar, colorForPercent, colorForCacheHit, timeUntil, formatCost, formatTokens, pct } = require('../lib/format');
 
 const INLINE_BAR_WIDTH = 5;
@@ -55,7 +64,22 @@ async function main() {
   process.stdout.write(line);
 }
 
+// `turn` is opt-in (via CC_USAGE_MONITOR_SHOW or the config file) — the
+// session segment already carries the cumulative picture by default.
 const DEFAULT_SHOW = ['model', 'ctx', '5h', '7d', 'session', 'cost'];
+
+// When the line is too long for the terminal we break between the two
+// semantic groups: limits/state (line 1) vs. session activity (line 2).
+const GROUP = {
+  model: 'limits',
+  ctx: 'limits',
+  '5h': 'limits',
+  '7d': 'limits',
+  turn: 'activity',
+  session: 'activity',
+  cost: 'activity',
+  lines: 'activity',
+};
 
 function renderLines(u) {
   const added = u.linesAdded ?? 0;
@@ -64,9 +88,21 @@ function renderLines(u) {
   return `${paint('+' + added, 'green')}/${paint('-' + removed, 'red')}`;
 }
 
-function renderCost(u) {
-  const c = u.cost != null ? formatCost(u.cost) : null;
-  return c ? paint(`API≈${c}`, 'magenta') : null;
+function renderCost(u, session) {
+  // Prefer the cost Claude Code reports; when absent, compute the
+  // API-equivalent cost from per-model transcript totals (lib/pricing).
+  // Only show a computed figure when every model in the session is priced
+  // and the transcript walk wasn't cut short — a partial sum would
+  // silently undercount. Computed figures get a ~ to mark the estimate.
+  if (u.cost != null) {
+    const c = formatCost(u.cost);
+    return c ? paint(`API≈${c}`, 'magenta') : null;
+  }
+  if (!session || session.truncated) return null;
+  const computed = sessionCost(session.models);
+  if (!computed || !computed.complete) return null;
+  const c = formatCost(computed.usd);
+  return c ? paint(`API≈~${c}`, 'magenta') : null;
 }
 
 const COMPONENTS = {
@@ -76,41 +112,60 @@ const COMPONENTS = {
   '7d':    (u)          => renderWindow('7d', u.sevenD),
   turn:    (u)          => renderTurn(u),
   session: (u, session) => renderSession(session, u) ?? renderLines(u),
-  cost:    (u)          => renderCost(u),
+  cost:    (u, session) => renderCost(u, session),
   lines:   (u)          => renderLines(u),
 };
 
-// Components that describe limits/state (line 1 when wrapped); everything else
-// is "activity" (tokens/session/cost/lines) and goes on line 2.
-const LIMITS_KEYS = new Set(['model', 'ctx', '5h', '7d']);
-
-function visibleLength(s) {
-  return s.replace(/\x1b\[[0-9;]*m/g, '').length;
-}
-
 function render(u, session) {
   const keys = ACTIVE_SHOW ?? DEFAULT_SHOW;
-  const rendered = keys
-    .map(k => ({ k, text: COMPONENTS[k]?.(u, session) }))
-    .filter(x => x.text);
-  if (!rendered.length) return paint('cc-usage-monitor: waiting for first turn…', 'gray');
+  const parts = [];
+  for (const k of keys) {
+    const part = COMPONENTS[k]?.(u, session);
+    if (part) parts.push({ part, group: GROUP[k] ?? 'activity' });
+  }
 
-  const oneLine = rendered.map(x => x.text).join(SEP);
+  if (!parts.length) {
+    return paint('cc-usage-monitor: waiting for first turn…', 'gray');
+  }
 
-  // Optionally wrap to two lines: rate-limit/context group first, activity
-  // group second. Triggered by CC_USAGE_MONITOR_TWO_LINE, or automatically
-  // when the visible width exceeds CC_USAGE_MONITOR_WIDTH / the terminal
-  // width / 160 (whichever is found first).
-  const forceTwoLine = !!process.env.CC_USAGE_MONITOR_TWO_LINE;
-  const width = Number(process.env.CC_USAGE_MONITOR_WIDTH)
-    || process.stdout.columns
-    || Number(process.env.COLUMNS)
-    || 160;
-  if (!forceTwoLine && visibleLength(oneLine) <= width) return oneLine;
+  // Single line preserves the user's CC_USAGE_MONITOR_SHOW order exactly.
+  // The limits/activity split is applied only when actually wrapping.
+  const single = parts.map((p) => p.part).join(SEP);
+  const limits = parts.filter((p) => p.group === 'limits').map((p) => p.part);
+  const activity = parts.filter((p) => p.group !== 'limits').map((p) => p.part);
+  if (!limits.length || !activity.length) return single;
 
-  const line1 = rendered.filter(x => LIMITS_KEYS.has(x.k)).map(x => x.text).join(SEP);
-  const line2 = rendered.filter(x => !LIMITS_KEYS.has(x.k)).map(x => x.text).join(SEP);
-  return (line1 && line2) ? `${line1}\n${line2}` : (line1 || line2);
+  if (twoLineForced()) {
+    return limits.join(SEP) + '\n' + activity.join(SEP);
+  }
+  const width = getTerminalWidth();
+  if (width && visibleLength(single) > width) {
+    return limits.join(SEP) + '\n' + activity.join(SEP);
+  }
+  return single;
+}
+
+function twoLineForced() {
+  const v = process.env.CC_USAGE_MONITOR_TWO_LINE;
+  return Boolean(v && v !== '0' && v !== 'false');
+}
+
+function getTerminalWidth() {
+  const env = process.env.CC_USAGE_MONITOR_WIDTH;
+  if (env) {
+    const n = parseInt(env, 10);
+    if (n > 0) return n;
+  }
+  if (process.stdout && process.stdout.columns) return process.stdout.columns;
+  if (process.env.COLUMNS) {
+    const n = parseInt(process.env.COLUMNS, 10);
+    if (n > 0) return n;
+  }
+  return 160;
+}
+
+function visibleLength(s) {
+  return String(s).replace(/\x1b\[[0-9;]*m/g, '').length;
 }
 
 function renderWindow(label, win) {
