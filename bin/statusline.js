@@ -31,6 +31,8 @@
  *                                   160 — whichever is found first.
  *   CC_USAGE_MONITOR_TWO_LINE=1     always wrap, regardless of width.
  *   NO_COLOR=1 / FORCE_COLOR=0      disable colors
+ *   CC_USAGE_MONITOR_DEBUG=1        print errors to stderr instead of failing
+ *                                   silently (developer aid)
  *
  * The same settings can be persisted via /cc-usage-monitor:config — the
  * config file fills in any env var not already set (env always wins).
@@ -42,7 +44,7 @@ require('../lib/config').applyConfigToEnv();
 const { readStdinJson, extractUsage, cacheHitPercent } = require('../lib/parse');
 const { sumSessionTokens } = require('../lib/transcript');
 const { sessionCost } = require('../lib/pricing');
-const { paint, bar, colorForPercent, colorForCacheHit, timeUntil, formatCost, formatTokens, pct } = require('../lib/format');
+const { paint, bar, colorForPercent, colorForCacheHit, timeUntil, formatCost, formatTokens, pct, stripAnsi } = require('../lib/format');
 
 const INLINE_BAR_WIDTH = 5;
 const SEP = ` ${paint('│', 'gray')} `;
@@ -54,14 +56,26 @@ async function main() {
   const payload = await readStdinJson();
   const u = extractUsage(payload);
 
-  // Walk the transcript on disk for session totals. Bounded by the walker's
-  // own 1500ms watchdog and 50 MB cap; never blocks the statusline.
-  const session = process.env.CC_USAGE_MONITOR_NO_SESSION
-    ? null
-    : await sumSessionTokens(payload && payload.transcript_path);
+  // Walk the transcript on disk for session totals, but only when a visible
+  // component actually consumes it (see needsSessionWalk). Bounded by the
+  // walker's own 1500ms watchdog and 50 MB cap; never blocks the statusline.
+  const session = needsSessionWalk(u)
+    ? await sumSessionTokens(payload && payload.transcript_path)
+    : null;
 
   const line = render(u, session);
   process.stdout.write(line);
+}
+
+// The transcript walk is an O(transcript) disk read on every turn — skip it
+// unless a shown component needs it. The `session` segment always does; `cost`
+// needs it only as a fallback when Claude Code didn't already report a cost.
+function needsSessionWalk(u) {
+  if (process.env.CC_USAGE_MONITOR_NO_SESSION) return false;
+  const keys = ACTIVE_SHOW ?? DEFAULT_SHOW;
+  if (keys.includes('session')) return true;
+  if (keys.includes('cost') && u.cost == null) return true;
+  return false;
 }
 
 // `turn` is opt-in (via CC_USAGE_MONITOR_SHOW or the config file) — the
@@ -139,7 +153,7 @@ function render(u, session) {
     return limits.join(SEP) + '\n' + activity.join(SEP);
   }
   const width = getTerminalWidth();
-  if (width && visibleLength(single) > width) {
+  if (width && stripAnsi(single).length > width) {
     return limits.join(SEP) + '\n' + activity.join(SEP);
   }
   return single;
@@ -162,10 +176,6 @@ function getTerminalWidth() {
     if (n > 0) return n;
   }
   return 160;
-}
-
-function visibleLength(s) {
-  return String(s).replace(/\x1b\[[0-9;]*m/g, '').length;
 }
 
 function renderWindow(label, win) {
@@ -237,7 +247,11 @@ function renderSession(session, u) {
   return text;
 }
 
-main().catch(() => {
-  // Never break Claude Code — fall back to silent line.
+main().catch((err) => {
+  // Never break Claude Code — fall back to a silent line. Set
+  // CC_USAGE_MONITOR_DEBUG=1 to surface the error to stderr while developing.
+  if (process.env.CC_USAGE_MONITOR_DEBUG) {
+    process.stderr.write(`cc-usage-monitor statusline error: ${(err && err.stack) || err}\n`);
+  }
   process.stdout.write('');
 });

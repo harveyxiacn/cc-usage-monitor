@@ -206,3 +206,18 @@ test('statusline: empty stdin produces a friendly waiting message and exits 0', 
   assert.equal(code, 0);
   assert.match(stdout, /waiting for first turn/);
 });
+
+test('statusline: SHOW without session/cost skips the transcript walk yet renders correctly', async () => {
+  // With neither `session` nor `cost` shown, the session walk is skipped for
+  // speed — output must still be correct (no Σ segment) even with a transcript.
+  const { stdout, code } = await runScript(
+    STATUSLINE, 'full.json',
+    { CC_USAGE_MONITOR_SHOW: 'model,ctx,5h,7d' },
+    withTranscript
+  );
+  assert.equal(code, 0);
+  assert.match(stdout, /Opus/);
+  assert.match(stdout, /5h /);
+  assert.doesNotMatch(stdout, /Σ/);
+  assert.doesNotMatch(stdout, /API≈/);
+});

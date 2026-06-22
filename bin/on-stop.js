@@ -18,7 +18,7 @@ require('../lib/config').applyConfigToEnv();
 const { readStdinJson, extractUsage, cacheHitPercent } = require('../lib/parse');
 const { sumSessionTokens } = require('../lib/transcript');
 const { sessionCost } = require('../lib/pricing');
-const { paint, bar, colorForPercent, colorForCacheHit, timeUntil, formatCost, formatTokens, pct } = require('../lib/format');
+const { paint, bar, colorForPercent, colorForCacheHit, timeUntil, formatCost, formatTokens, pct, stripAnsi } = require('../lib/format');
 
 async function main() {
   if (process.env.CC_USAGE_MONITOR_QUIET) return;
@@ -198,10 +198,10 @@ function boxLine(content, innerWidth) {
   return paint('│ ', 'gray') + content + ' '.repeat(padding) + paint(' │', 'gray');
 }
 
-function stripAnsi(s) {
-  return String(s).replace(/\x1b\[[0-9;]*m/g, '');
-}
-
-main().catch(() => {
-  // Silent failure — never block Claude Code.
+main().catch((err) => {
+  // Silent failure — never block Claude Code. Set CC_USAGE_MONITOR_DEBUG=1
+  // to surface the error to stderr while developing.
+  if (process.env.CC_USAGE_MONITOR_DEBUG) {
+    process.stderr.write(`cc-usage-monitor on-stop error: ${(err && err.stack) || err}\n`);
+  }
 });

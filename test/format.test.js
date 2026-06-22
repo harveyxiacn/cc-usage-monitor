@@ -11,6 +11,8 @@ const {
   pct,
   colorForPercent,
   colorForCacheHit,
+  stripAnsi,
+  paint,
 } = require('../lib/format');
 const { cacheHitPercent } = require('../lib/parse');
 
@@ -143,4 +145,14 @@ test('colorForCacheHit: inverted thresholds at 40 and 70 (higher=better)', () =>
   assert.equal(colorForCacheHit(70), 'green');
   assert.equal(colorForCacheHit(100), 'green');
   assert.equal(colorForCacheHit(null), 'gray');
+});
+
+test('stripAnsi: removes color escapes and measures visible width', () => {
+  assert.equal(stripAnsi('\x1b[32m+12\x1b[0m'), '+12');
+  // Visible length ignores the escape sequences entirely.
+  const painted = paint('abc', 'cyan');
+  assert.equal(stripAnsi(painted).length, 3);
+  // Plain strings pass through unchanged; non-strings are coerced.
+  assert.equal(stripAnsi('plain'), 'plain');
+  assert.equal(stripAnsi(42), '42');
 });
