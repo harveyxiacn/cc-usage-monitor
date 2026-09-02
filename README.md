@@ -131,13 +131,15 @@ of a deep work session, this plugin is for you.
 
 ## Install
 
-### Option 1 — manual install (recommended)
+### Option 1 — clone into the skills directory (recommended)
 
-Clone the repo into a stable directory and add two lines to your Claude Code
-settings. Works on every platform, easiest to update.
+Claude Code auto-loads any plugin directory under `~/.claude/skills/` as
+`<name>@skills-dir` on every start, so one clone gives you the slash
+commands **and** the Stop hook. Only the statusline needs a line in
+`settings.json`, because a plugin cannot set `statusLine` itself.
 
 ```bash
-git clone https://github.com/harveyxiacn/cc-usage-monitor.git ~/.claude/plugins/cc-usage-monitor
+git clone https://github.com/harveyxiacn/cc-usage-monitor.git ~/.claude/skills/cc-usage-monitor
 ```
 
 Then edit `~/.claude/settings.json` and merge in:
@@ -146,9 +148,49 @@ Then edit `~/.claude/settings.json` and merge in:
 {
   "statusLine": {
     "type": "command",
-    "command": "node ~/.claude/plugins/cc-usage-monitor/bin/statusline.js",
+    "command": "node ~/.claude/skills/cc-usage-monitor/bin/statusline.js",
     "padding": 1
-  },
+  }
+}
+```
+
+On Windows replace `~/` with the absolute path (e.g. `C:/Users/YourName/.claude/...`)
+because PowerShell and cmd don't expand `~` when Claude Code spawns the
+command. Forward slashes work fine on Windows in JSON values.
+
+Restart Claude Code (or run `/reload-plugins`). `claude plugin list` should
+show `cc-usage-monitor@skills-dir`, and `/cc-usage-monitor:style`,
+`:config`, `:usage`, `:update` become available. Do **not** also add the
+Stop hook to `settings.json` — the plugin registers it, and a second copy
+prints the box twice.
+
+**Already installed the old way** (clone under `~/.claude/plugins/` plus a
+hand-written `hooks.Stop` entry)? That setup runs the statusline and the box
+but never loads the slash commands. Either move the clone to
+`~/.claude/skills/cc-usage-monitor` and update the `statusLine` path, or
+keep it where it is and link it in:
+
+```powershell
+# Windows
+New-Item -ItemType Junction -Path "$env:USERPROFILE\.claude\skills\cc-usage-monitor" -Target "$env:USERPROFILE\.claude\plugins\cc-usage-monitor"
+```
+
+```bash
+# macOS / Linux
+ln -s ~/.claude/plugins/cc-usage-monitor ~/.claude/skills/cc-usage-monitor
+```
+
+Then delete the `hooks.Stop` entry for `on-stop.js` from `settings.json`
+(the plugin now provides it) and restart.
+
+### Option 1b — statusline only
+
+If you don't want the slash commands, the previous manual setup still
+works: clone anywhere, point `statusLine` at `bin/statusline.js` and add
+the Stop hook by hand:
+
+```jsonc
+{
   "hooks": {
     "Stop": [
       {
@@ -164,11 +206,10 @@ Then edit `~/.claude/settings.json` and merge in:
 }
 ```
 
-On Windows replace `~/` with the absolute path (e.g. `C:/Users/YourName/.claude/...`)
-because PowerShell and cmd don't expand `~` when Claude Code spawns the
-command. Forward slashes work fine on Windows in JSON values.
-
-Restart Claude Code or run `/reload-plugins` to pick up the change.
+Styles and overrides are still available through the config CLI
+(`node …/bin/config.js preview` / `set style dots`) and the
+`CC_USAGE_MONITOR_*` environment variables; only the `/cc-usage-monitor:…`
+commands need the plugin to be loaded.
 
 ### Option 2 — quick try-out (no install)
 
@@ -485,6 +526,16 @@ external deps.
 - Node.js ≥ 18 (uses only stable stdlib APIs)
 
 ## FAQ
+
+**Q: `/cc-usage-monitor:style` (or `:config`, `:update`) says "No command match".**
+A: The plugin is not loaded, only its scripts are. Pointing `statusLine` and a
+`hooks.Stop` entry at the scripts (the old manual install) runs the statusline
+and the box but never loads `commands/`. Clone or link the plugin under
+`~/.claude/skills/cc-usage-monitor` as described in
+[Install](#option-1--clone-into-the-skills-directory-recommended), remove
+the hand-written Stop hook, restart, and check `claude plugin list` shows
+`cc-usage-monitor@skills-dir`. Styles still work without the commands via
+`node …/bin/config.js set style <name>` or `CC_USAGE_MONITOR_STYLE`.
 
 **Q: My statusline shows the model name but no `5h` / `7d` numbers.**
 A: The `rate_limits` field is only present on Pro/Max subscriptions and only

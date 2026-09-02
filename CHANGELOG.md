@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-09-02
+
+### Fixed
+
+- **Install docs: the slash commands never loaded under the documented manual install.** Pointing `statusLine` and a hand-written `hooks.Stop` at the scripts runs both surfaces but does not load the plugin, so `/cc-usage-monitor:style` / `:config` / `:update` / `:usage` answered "No command match". The recommended install is now a clone under `~/.claude/skills/cc-usage-monitor`, which Claude Code auto-loads as `cc-usage-monitor@skills-dir` (commands + the Stop hook from `hooks/hooks.json`), with only `statusLine` left in `settings.json` (plugins cannot set it). Existing installs under `~/.claude/plugins/` can be linked in with a junction / symlink; the hand-written Stop hook must then be removed or the box prints twice. The statusline-only setup remains documented as Option 1b, and a FAQ entry covers the symptom.
+
 ## [0.8.1] - 2026-09-02
 
 ### Added
