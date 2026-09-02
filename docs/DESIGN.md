@@ -24,6 +24,7 @@
 | Stop hook (`bin/on-stop.js`)     | When Claude finishes a task | stderr, multi-line box |
 | Slash command (`commands/usage.md`) | User invokes `/cc-usage-monitor:usage` | conversation |
 | Slash command (`commands/config.md`) | User invokes `/cc-usage-monitor:config` | conversation (writes config file via `bin/config.js`) |
+| Slash command (`commands/style.md`) | User invokes `/cc-usage-monitor:style` | conversation (previews the 10 presets via `bin/config.js preview`, saves `style`) |
 
 The statusline runs **constantly**, so it does no shell-outs and only two
 tightly bounded filesystem reads: the small config file (one read,
@@ -93,8 +94,10 @@ The walker has a 50 MB safety cap, a 1500 ms watchdog timeout, and silently
 returns `null` on missing/unreadable files so the Stop hook never blocks
 Claude Code.
 
-We don't walk the transcript from the statusline because it fires on every
-turn — file I/O on the hot path is unnecessary risk.
+The statusline walks the transcript too (since 0.4.0), but only when a shown
+component actually needs it — the `session` segment always does, `cost`
+only as a fallback when Claude Code didn't report one — so a
+`CC_USAGE_MONITOR_SHOW` without those keys costs no file I/O on the hot path.
 
 ### Tertiary: bundled pricing table (`lib/pricing.js`)
 
@@ -102,38 +105,50 @@ turn — file I/O on the hot path is unnecessary risk.
 compute an API-equivalent figure ourselves: the transcript walker buckets
 tokens **per model** (each assistant entry carries `message.model`), and
 `lib/pricing.js` prices each bucket with rates verified against the live
-platform.claude.com pricing page (snapshot 2026-06):
+platform.claude.com pricing page (snapshot 2026-09-02):
 
-| Model family | Input $/MTok | Output $/MTok |
-| --- | --- | --- |
-| Fable 5 / Mythos 5 | 10 | 50 |
-| Opus 4.8 / 4.7 / 4.6 / 4.5 | 5 | 25 |
-| Opus 4.8 Fast | 10 | 50 |
-| Opus 4.7 / 4.6 Fast | 30 | 150 |
-| Opus 4.1 / 4 | 15 | 75 |
-| Sonnet 4.x / 3.x | 3 | 15 |
-| Opus 3 | 15 | 75 |
-| Haiku 4.5 | 1 | 5 |
-| Haiku 3.5 | 0.80 | 4 |
-| Haiku 3 | 0.25 | 1.25 |
+| Model family | Input $/MTok | Output $/MTok | Cache read $/MTok |
+| --- | --- | --- | --- |
+| Fable 5.1 / Mythos 5.1 | 10 | 50 | 0.25 (flat, 0.025×) |
+| Fable 5 / Mythos 5 | 10 | 50 | 1 |
+| Opus 5 / 4.8 / 4.7 / 4.6 / 4.5 | 5 | 25 | 0.50 |
+| Opus 5 Fast / Opus 4.8 Fast | 10 | 50 | 1 |
+| Opus 4.1 / 4 | 15 | 75 | 1.50 |
+| Sonnet 5 | 2 | 10 | 0.20 |
+| Sonnet 4.6 / 4.5 / 4 / 3.x | 3 | 15 | 0.30 |
+| Opus 3 | 15 | 75 | 1.50 |
+| Haiku 4.5 | 1 | 5 | 0.10 |
+| Haiku 3.5 | 0.80 | 4 | 0.08 |
+| Haiku 3 | 0.25 | 1.25 | 0.025 |
 
 Cache multipliers follow the official rules and stack on fast-mode rates:
-reads 0.1× input, 5-minute writes 1.25×, 1-hour writes 2× (the walker reads
-the `usage.cache_creation.ephemeral_1h_input_tokens` breakdown when Claude
-Code records it; otherwise everything is priced at the 5-minute rate, which
-matches Claude Code's default TTL). The 1M context window on Fable 5 /
-Opus 4.8–4.6 / Sonnet 4.6 carries no long-context premium, so none is
-modelled.
+reads 0.1× input (Fable 5.1 / Mythos 5.1 are the exception at a flat
+$0.25/MTok), 5-minute writes 1.25×, 1-hour writes 2× (the walker reads the
+`usage.cache_creation.ephemeral_1h_input_tokens` breakdown when Claude Code
+records it; otherwise everything is priced at the 5-minute rate, which
+matches Claude Code's default TTL). Fast mode only carries a premium on
+Opus 5 and Opus 4.8 — Opus 4.7 rejects it and Opus 4.6 bills it at standard
+rates, so those IDs fall through to their plain rows. Every current model
+includes the 1M context window at standard pricing, so no long-context
+premium is modelled.
 
-Model IDs resolve by substring on a normalised ID (lowercased, bracket
-suffixes like `[1m]` stripped), so date-suffixed and Bedrock-prefixed IDs
-match too. The same registry supplies friendly display names when Claude
-Code omits `model.display_name`.
+Model IDs resolve by **version-boundary matching** on a normalised ID
+(lowercased, bracket suffixes like `[1m]` stripped): a registry key matches
+when it appears in the ID and is not followed by a further point-version.
+`fable-5` therefore matches `claude-fable-5`, `claude-fable-5[1m]` and
+`anthropic.claude-fable-5`, but not `claude-fable-5-1` (own row) or a
+hypothetical `claude-fable-5-2`. Eight-digit date suffixes, Vertex `@date`
+and Bedrock `-v1:0` suffixes, and word suffixes like `-fast` still match.
+The same registry supplies friendly display names when Claude Code omits
+`model.display_name`.
 
 Two honesty rules: a computed figure is only shown when **every** model in
 the session is priced (a partial sum would silently undercount), and the
 Stop-hook box labels it `(est.)` to distinguish it from a Claude
-Code-reported cost. Unknown models return `null`, never `0`.
+Code-reported cost. Unknown models — including unlisted point releases —
+return `null`, never `0`. Fable 5.1 cut the cache-read rate by 4× while
+keeping the per-token price, which is exactly the kind of change a loose
+"same family, same price" guess would get wrong.
 
 ### Fallback: ccusage (slash command only)
 
@@ -149,10 +164,11 @@ lib/format.js     Pure formatters (bar, color, time, cost, tokens). No I/O.
 lib/parse.js      Stdin reader + JSON shape extractor. No formatting.
 lib/pricing.js    Model registry: display names + per-MTok pricing. Pure data + math.
 lib/config.js     Persistent user config (~/.claude/cc-usage-monitor.json). Small I/O.
+lib/theme.js      The 10 style presets: glyphs, widths, labels, color mode. Pure data.
 lib/transcript.js Streaming JSONL walker with per-model token buckets. I/O.
 bin/statusline.js Wires lib/parse + lib/format (+ lib/pricing fallback) → stdout.
 bin/on-stop.js    Wires lib/parse + lib/format + lib/transcript + lib/pricing → stderr (boxed).
-bin/config.js     CLI for /cc-usage-monitor:config (get / set / reset).
+bin/config.js     CLI for /cc-usage-monitor:config and :style (get / set / reset / preview).
 ```
 
 The config file bridges into the existing env-var interface: at process
@@ -177,6 +193,18 @@ Bar width:
 
 - Statusline: 5 cells (compact, fits in tight terminals)
 - Stop hook box: 12 cells (slightly more headroom inside the box)
+
+Those numbers describe the `classic` preset. The other nine presets in
+`lib/theme.js` are partial overrides of it — bar glyphs and widths,
+separator, labels, countdown / context-detail visibility, box borders and
+bullet, and a color mode (`default`, `mono`: no color SGR at all with bold
+past the red threshold, `badge`: background-colored pills). Both bins
+resolve the theme once at startup (after `applyConfigToEnv()`, so the
+`style` config key can reach it) and thread it through every renderer;
+nothing is looked up per segment. `CC_USAGE_MONITOR_BAR_STYLE` overrides
+the glyphs of any preset that has bars, never re-enabling them on
+`minimal`. An unknown name falls back to `classic` — a typo in a shell
+profile must not blank the statusline.
 
 The Stop-hook box is at least 60 columns wide inside, growing to fit the
 longest row so the right border always lines up.
@@ -208,20 +236,43 @@ hook (we don't print empty boxes).
 | Test layer | What we verify |
 | ---------- | -------------- |
 | `format.test.js` | Pure formatters: bar widths, time math, cost rounding, color buckets. |
-| `pricing.test.js` | Model-ID resolution (suffixes, prefixes, specificity ordering), per-model rates, cache-write TTL math, session totals and incompleteness guards. |
+| `manifest.test.js` | The three manifests agree on the version, CHANGELOG has a section for it, slash commands carry front-matter. |
+| `pricing.test.js` | Model-ID resolution (version-boundary matching, date / Bedrock / Vertex suffixes), per-model rates incl. the flat Fable 5.1 cache-read price, cache-write TTL math, session totals, breakdown merging and incompleteness guards. |
+| `models.test.js` | End-to-end 2026-09 roster: `claude-fable-5-1[1m]` naming and Fable 5.1 + Sonnet 5 pricing through both surfaces. |
+| `theme.test.js` | Every preset resolves with the full shape; env precedence; `barStyle` override rules; `ascii` is 7-bit. |
 | `transcript.test.js` | Walker: dedup-by-message-id, per-model buckets, missing/empty files. |
-| `statusline.test.js` | Pipe each fixture into the real `bin/statusline.js`; assert stdout content, wrapping, and computed-cost fallback. |
-| `on-stop.test.js`    | Same approach for the Stop hook; verify output goes to stderr, the Models breakdown, `(est.)` labelling, and `CC_USAGE_MONITOR_QUIET=1`. |
+| `statusline.test.js` | Pipe each fixture into the real `bin/statusline.js`; assert stdout content, wrapping, computed-cost fallback, and one distinguishing pattern per style. |
+| `on-stop.test.js`    | Same approach for the Stop hook; verify output goes to stderr, the Models breakdown, `(est.)` labelling, `CC_USAGE_MONITOR_QUIET=1`, and that every styled box stays rectangular. |
 
-Total: 90 tests, runtime ≈ 1 s, no external deps.
+Total: 165 tests, runtime ≈ 4 s, no external deps.
 
 ## Future work
 
-- Cache the last-seen `rate_limits` in `${CLAUDE_PLUGIN_DATA}` so the
-  statusline can show stale-but-non-empty data on the first turn of a fresh
-  session.
-- Optional Slack / desktop notification when the 7-day window crosses 90 %.
-- A `/cc-usage-monitor:reset` command that opens the Anthropic billing page.
-- Plan-aware projection: if the user tells us their tier (`pro`, `max-5x`,
-  `max-20x`) we can show "≈ N hours of Sonnet remaining" instead of just
-  percentages.
+Ordered by priority (see CHANGELOG 0.8.0 review notes):
+
+1. **Stop-hook state cache.** The documented Stop-hook input carries only
+   `session_id`, `transcript_path`, `stop_reason`, `last_assistant_message`
+   and a few others — no `rate_limits`, `cost`, `context_window` or
+   `model`. Have the statusline persist its last payload to
+   `${CLAUDE_PLUGIN_DATA}/last-state.json` and let the Stop hook read it.
+   That also fixes the first-turn blank and gives cross-session memory.
+2. **Terminal display width.** Box padding and wrapping measure
+   `stripAnsi(s).length`, which undercounts emoji (1 code unit, 2 columns)
+   and CJK. A small `lib/width.js` (East Asian Wide ranges, VS16,
+   surrogate pairs) removes the last visual defect in the `emoji` preset.
+3. **Bar rounding.** `bar()` rounds, so 97 % of 12 cells renders full and
+   3 % renders empty; floor with a one-cell floor/ceiling guard instead.
+4. **Burn-rate projection.** Transcript entries carry timestamps; with the
+   cached `five_hour.used_percentage` history the statusline can say
+   "at this pace the 5 h window fills in 1 h 47 m (resets in 2 h 13 m)".
+5. **Subagent attribution.** Transcript entries carry `isSidechain`; bucket
+   main-loop vs. subagent tokens and show a "subagents $X" bit.
+6. **Wrap width.** `process.stdout.columns` is undefined under Claude Code's
+   pipe, so the default falls to 160; either lower it or document
+   `CC_USAGE_MONITOR_WIDTH` as required for wrapping.
+7. Read the payload's `prompt_cache` object and `rate_limits.spend_limit`
+   instead of deriving cache-hit % ourselves; count `server_tool_use` web
+   searches ($10 / 1k) in the estimate.
+8. Cap `timeUntil` (a far-future `resets_at` currently prints
+   `95042d 13h`); write the config file atomically (temp + rename); add a
+   GitHub Actions matrix (Node 18/20/22 × ubuntu/windows).

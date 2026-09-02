@@ -6,7 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node ≥18](https://img.shields.io/badge/node-%E2%89%A518-43853d.svg)](package.json)
-[![Tests](https://img.shields.io/badge/tests-90%20passing-brightgreen.svg)](#tests)
+[![Tests](https://img.shields.io/badge/tests-165%20passing-brightgreen.svg)](#tests)
 
 ---
 
@@ -15,7 +15,7 @@
 **In the statusline (every assistant turn):**
 
 ```
-Fable 5 │ ctx ▰▰▱▱▱ 32% (320k/1.0M) │ 5h ▰▱▱▱▱ 18% (2h 13m) │ 7d ▰▰▱▱▱ 36% (2d 3h) │ Σ↑5.5k ↓3.2k │ +12/-3 │ cache ▰▰▱▱▱ 38% │ API≈~$0.101
+Fable 5.1 │ ctx ▰▰▱▱▱ 32% (320k/1.0M) │ 5h ▰▱▱▱▱ 18% (2h 13m) │ 7d ▰▰▱▱▱ 36% (2d 3h) │ Σ↑5.5k ↓3.2k │ +12/-3 │ cache ▰▰▱▱▱ 38% │ API≈~$0.111
 ```
 
 (When the line is wider than the terminal it wraps into two lines, splitting
@@ -27,8 +27,10 @@ colors are inverted relative to rate-limit colors (higher = greener) since
 a high hit rate means cheap, fast turns.
 
 Which components appear — and in what order — is fully configurable via
-`CC_USAGE_MONITOR_SHOW`. The bar style is configurable via
-`CC_USAGE_MONITOR_BAR_STYLE`. See [Configuration](#configuration) below.
+`CC_USAGE_MONITOR_SHOW`. The whole look — ten presets from `minimal` to
+`emoji` — is picked with `/cc-usage-monitor:style` or `CC_USAGE_MONITOR_STYLE`,
+and the bar glyphs alone via `CC_USAGE_MONITOR_BAR_STYLE`. See
+[Configuration](#configuration) below.
 
 **In the CLI after every task (Stop hook):**
 
@@ -39,8 +41,8 @@ Which components appear — and in what order — is fully configurable via
 │ Context    ▰▰▰▰▱▱▱▱▱▱▱▱   32%   320k of 1.0M                          │
 │ This turn  ↑ 320k  •  ↓ 2.4k  •  ▰▰▰▰▰▰▰▰▰▰▰▰  97% cached             │
 │ Session    ↑ 5.5k  •  ↓ 3.2k  •  ▰▰▰▰▰▱▱▱▱▱▱▱  38% cached  •  4 turns │
-│ Models     Fable 5 $0.090  •  Haiku 4.5 $0.011                        │
-│ Cost       API≈$0.101 (est.)  •  +12/-3 lines  •  Fable 5             │
+│ Models     Fable 5.1 $0.088  •  Sonnet 5 $0.022                       │
+│ Cost       API≈$0.111 (est.)  •  +12/-3 lines  •  Fable 5.1           │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -58,7 +60,7 @@ The rows in the box:
   message ID. Includes a session-wide cache-hit rate (more stable than
   the per-turn one) and a turn count.
 - **Models** — per-model API-equivalent cost breakdown, shown when the
-  session mixed models (e.g. main loop on Fable 5, subagents on Haiku).
+  session mixed models (e.g. main loop on Fable 5.1, subagents on Sonnet 5).
   Computed from the transcript token totals and the bundled pricing table.
 - **Cost** — `API≈$X.XX` makes it explicit that the figure is what the
   session would have cost on the pay-as-you-go API (helpful for Pro/Max
@@ -90,14 +92,16 @@ of a deep work session, this plugin is for you.
 - **API-equivalent price** (`API≈$X.XX`) so you know what the session would
   have cost on the pay-as-you-go API. When Claude Code doesn't report a cost,
   it's computed from the transcript using a bundled pricing table covering
-  every current model — Fable 5 / Mythos 5 ($10/$50 per MTok), Opus 4.8–4.5
-  ($5/$25), Sonnet 4.x ($3/$15), Haiku 4.5 ($1/$5), fast-mode Opus premiums,
-  and the official cache multipliers (0.1× reads, 1.25× 5-minute writes,
-  2× 1-hour writes).
+  every current model — Fable 5.1 / Fable 5 / Mythos ($10/$50 per MTok, with
+  Fable 5.1's cheaper $0.25/MTok cache reads), Opus 5 / 4.8–4.5 ($5/$25),
+  Sonnet 5 ($2/$10), Sonnet 4.x ($3/$15), Haiku 4.5 ($1/$5), fast-mode
+  Opus 5 / 4.8 premiums, and the official cache multipliers (0.1× reads,
+  1.25× 5-minute writes, 2× 1-hour writes). Verified against the live
+  pricing page on 2026-09-02.
 - **Per-model cost breakdown** in the Stop-hook box for mixed-model sessions
   (main loop + subagents on different models).
 - **Friendly model names** even when Claude Code sends only a raw ID —
-  `claude-fable-5[1m]` renders as `Fable 5`.
+  `claude-fable-5-1[1m]` renders as `Fable 5.1`.
 - **Token counts** for the latest turn (statusline) and **session-cumulative
   totals** (Stop-hook box) computed from the transcript JSONL log, deduped
   by Anthropic message ID.
@@ -112,7 +116,11 @@ of a deep work session, this plugin is for you.
   interactively via `/cc-usage-monitor:config` (checklist or "let the agent
   pick"), persistently via the config file, or per-shell via
   `CC_USAGE_MONITOR_SHOW`.
-- **5 bar styles** — `block` (default), `shade`, `square`, `thin`, `ascii` via `CC_USAGE_MONITOR_BAR_STYLE`.
+- **10 styles** — `classic`, `minimal`, `compact`, `detailed`, `bracket`,
+  `ascii`, `dots`, `badge`, `emoji`, `mono` — one setting restyles both the
+  statusline and the Stop-hook box. Preview them side by side and switch
+  with `/cc-usage-monitor:style`, or set `CC_USAGE_MONITOR_STYLE`.
+- **5 bar styles** — `block` (default), `shade`, `square`, `thin`, `ascii` via `CC_USAGE_MONITOR_BAR_STYLE`; composes with any style.
 - **Quietable** — set `CC_USAGE_MONITOR_QUIET=1` to silence the post-task box.
 - **One-step updates** — `/cc-usage-monitor:update` pulls the latest from GitHub.
 - **No telemetry, no network** — reads only the JSON Claude Code already pipes
@@ -223,7 +231,8 @@ Run the config command inside any Claude Code session:
 
 The agent shows a checklist of components and bar styles, saves your picks
 to `~/.claude/cc-usage-monitor.json`, and they take effect on the next
-assistant turn. You can also just tell it what you want ("only model, ctx
+assistant turn. For the overall look, `/cc-usage-monitor:style` renders all
+ten presets with your own settings and lets you pick one by eye. You can also just tell it what you want ("only model, ctx
 and cost", "use ascii bars", or even "you pick a sensible layout for me")
 and it applies the change directly. Environment variables always override
 the config file, so existing setups are unaffected.
@@ -249,7 +258,7 @@ CC_USAGE_MONITOR_SHOW=model,ctx,5h,7d,session,cost
 
 | Key | What it shows | Default |
 | --- | --- | :---: |
-| `model` | Model name (e.g. `Fable 5`) | ✓ |
+| `model` | Model name (e.g. `Fable 5.1`) | ✓ |
 | `ctx` | Context window usage bar + % + `(used/total)` | ✓ |
 | `5h` | 5-hour rate-limit bar + % + reset countdown | ✓ |
 | `7d` | 7-day rate-limit bar + % + reset countdown | ✓ |
@@ -264,6 +273,57 @@ If `CC_USAGE_MONITOR_SHOW` is not set, the default order is:
 > **Note:** `lines` is embedded inside the `session` component by default
 > (`Σ↑3.1M ↓22k │ +153/-125 │ cache ▰▰▰▰▰ 96%`). Use the standalone `lines`
 > key only when you want lines without session token counts.
+
+### Choosing a style (10 presets)
+
+A **style** is a whole look — bar glyphs and widths, separators, labels,
+whether countdowns and context detail are shown, the Stop-hook box borders,
+and the color mode — applied to **both** the statusline and the Stop-hook
+box. There are ten presets:
+
+| Style | Statusline (sample data, colors off) | What it changes |
+| --- | --- | --- |
+| `classic` *(default)* | `Fable 5.1 │ ctx ▰▰▱▱▱ 32% (320k/1.0M) │ 5h ▰▱▱▱▱ 18% (2h 12m) │ 7d ▰▰▱▱▱ 36% (3d 4h) │ +12/-3 │ API≈$0.101` | The original look: `▰▱` bars, `│` separators, countdowns, threshold colors. |
+| `minimal` | `Fable 5.1 · ctx 32% · 5h 18% · 7d 36% · +12/-3 · API≈$0.101` | No bars anywhere, no countdowns, no context detail; percentages keep the threshold color. |
+| `compact` | `Fable 5.1 \| ctx █░░ 32% \| 5h █░░ 18% \| 7d █░░ 36% \| +12/-3 \| API≈$0.101` | 3-cell `█░` bars (8 in the box), no countdowns — for narrow terminals. |
+| `detailed` | `Fable 5.1 │ context ▰▰▰▱▱▱▱▱ 32% (320k/1.0M) │ 5-hour ▰▱▱▱▱▱▱▱ 18% (2h 12m) │ 7-day ▰▰▰▱▱▱▱▱ 36% (3d 4h) │ …` | 8-cell bars (16 in the box) and spelled-out labels. |
+| `bracket` | `Fable 5.1 │ ctx [▰▰▱▱▱] 32% (320k/1.0M) │ 5h [▰▱▱▱▱] 18% (2h 12m) │ 7d [▰▰▱▱▱] 36% (3d 4h) │ …` | Classic with every bar in `[ ]`. |
+| `ascii` | `Fable 5.1 \| ctx [##---] 32% (320k/1.0M) \| 5h [#----] 18% (2h 12m) \| 7d [##---] 36% (3d 4h) \| +12/-3 \| API=$0.101` | Pure 7-bit ASCII on both surfaces: `#-` bars, `^ v S =` glyphs (`API=~$` marks a computed cost), `+--+` box borders, `*` bullets. Ignores `barStyle`. |
+| `dots` | `Fable 5.1 • ctx ●●○○○ 32% (320k/1.0M) • 5h ●○○○○ 18% (2h 12m) • 7d ●●○○○ 36% (3d 4h) • …` | Round `●○` bars and `•` separators. |
+| `badge` | `[ Fable 5.1 ] [ ctx ▰▰▱▱▱ 32% ] [ 5h ▰▱▱▱▱ 18% ] [ 7d ▰▰▱▱▱ 36% ] [ +12/-3 ] [ API≈$0.101 ]` | Each segment is a pill on a colored background (model cyan, metrics their threshold color, cost magenta); with `NO_COLOR` it degrades to the `[ ]` form shown. |
+| `emoji` | `🤖 Fable 5.1 │ 🧠 ▰▰▱▱▱ 32% (320k/1.0M) │ ⏱ ▰▱▱▱▱ 18% (2h 12m) │ 📅 ▰▰▱▱▱ 36% (3d 4h) │ +12/-3 │ 💰 API≈$0.101` | Emoji instead of word labels in the statusline (`🤖 🧠 ⏱ 📅 ♻ ⚡ 💰`); the box keeps its row labels. |
+| `mono` | `Fable 5.1 │ ctx ━━╌╌╌ 32% (320k/1.0M) │ 5h ━╌╌╌╌ 18% (2h 12m) │ 7d ━━╌╌╌ 36% (3d 4h) │ +12/-3 │ API≈$0.101` | No colors at all: `━╌` bars, values past the red threshold in **bold**, secondary text dim. Good for color-blind users and monochrome terminals. |
+
+**Switching styles inside Claude Code** — three ways, all live on the next
+assistant turn:
+
+1. **Slash command (recommended):**
+
+   ```
+   /cc-usage-monitor:style            # renders all ten with your own settings, then asks
+   /cc-usage-monitor:style dots       # applies one directly
+   ```
+
+2. **Config CLI** (persists to `~/.claude/cc-usage-monitor.json`):
+
+   ```bash
+   node ~/.claude/plugins/cc-usage-monitor/bin/config.js preview        # all ten, * marks the active one
+   node ~/.claude/plugins/cc-usage-monitor/bin/config.js preview badge  # just one
+   node ~/.claude/plugins/cc-usage-monitor/bin/config.js set style badge
+   node ~/.claude/plugins/cc-usage-monitor/bin/config.js reset style    # back to classic
+   ```
+
+3. **Environment variable** (per shell, or inline in `settings.json` as
+   shown [below](#setting-environment-variables)) — overrides the config file:
+
+   ```bash
+   export CC_USAGE_MONITOR_STYLE=mono
+   ```
+
+`style` and `barStyle` compose: `barStyle` replaces just the bar glyphs on
+top of whichever style is active (except on `minimal`, which has no bars, and `ascii`, which keeps its 7-bit glyphs so the guarantee holds).
+An unknown style name renders as `classic` rather than blanking the
+statusline; `set style` rejects it with the list of valid names.
 
 ### Choosing a bar style
 
@@ -313,6 +373,7 @@ Or inline in `settings.json` if you want to scope it to Claude Code only:
 
 | Environment variable | Effect |
 | --- | --- |
+| `CC_USAGE_MONITOR_STYLE=name`   | Pick one of the 10 [style presets](#choosing-a-style-10-presets). Unknown names render as `classic`. |
 | `CC_USAGE_MONITOR_QUIET=1`      | Silences the post-task box. Statusline still updates. |
 | `CC_USAGE_MONITOR_NO_SESSION=1` | Skip the transcript walk in the statusline (drops the `Σ` segment). The Stop-hook Session row is unaffected. |
 | `CC_USAGE_MONITOR_TWO_LINE=1`   | Force the statusline to wrap to two lines. |
@@ -323,8 +384,9 @@ Or inline in `settings.json` if you want to scope it to Claude Code only:
 | `FORCE_COLOR=0`                 | Force colors off. |
 
 All of these except the color toggles and the config path can also be set
-persistently via `/cc-usage-monitor:config` (config-file keys: `show`,
-`barStyle`, `twoLine`, `width`, `quiet`, `noSession`). Precedence:
+persistently via `/cc-usage-monitor:config` or `/cc-usage-monitor:style`
+(config-file keys: `show`, `style`, `barStyle`, `twoLine`, `width`, `quiet`,
+`noSession`). Precedence:
 environment variable → config file → built-in default.
 
 ## How it works
@@ -350,17 +412,26 @@ See [`docs/DESIGN.md`](docs/DESIGN.md) for the full architecture.
 npm test
 ```
 
-Runs **90 tests** covering:
+Runs **165 tests** covering:
 
 - formatter unit tests (bar rendering, time-until, cost formatting, token
   abbreviation, cache-hit math, color thresholds)
-- pricing unit tests (model-ID resolution incl. `[1m]` / date / provider
-  suffixes, Fable 5 and fast-mode rates, 5m vs 1h cache-write math,
-  mixed-model session totals, unknown-model guards)
+- pricing unit tests (model-ID resolution incl. `[1m]` / date / Bedrock /
+  Vertex suffixes and version-boundary matching, Fable 5.1 / Opus 5 /
+  Sonnet 5 rates, Fable 5.1's flat cache-read price, 5m vs 1h cache-write
+  math, mixed-model session totals, unknown-model guards)
+- end-to-end model-roster tests (`claude-fable-5-1[1m]` → `Fable 5.1`,
+  Fable 5.1 + Sonnet 5 transcript priced at the new rates on both surfaces)
 - transcript walker unit tests (dedup-by-message-id, per-model bucketing,
   missing path, empty file, non-assistant entries)
-- statusline integration tests against six fixture JSON payloads (full,
-  high-usage, no-rate-limits, missing-cost, no-cache, fable)
+- style preset tests (all ten resolve, env-over-config precedence,
+  `barStyle` override rules, `classic` unchanged, `ascii` pure 7-bit on both
+  surfaces, `mono` color-free, `badge` background codes, rectangular boxes,
+  `preview` / `set style` CLI)
+- manifest tests (the three manifests agree on the version, CHANGELOG has a
+  section for it, slash commands carry front-matter)
+- statusline integration tests against seven fixture JSON payloads (full,
+  high-usage, no-rate-limits, missing-cost, no-cache, fable, fable-5-1)
 - Stop-hook integration tests (output goes to stderr, layout sections,
   Session line appears only when `transcript_path` is provided,
   `CC_USAGE_MONITOR_QUIET` silences output)

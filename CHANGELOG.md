@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-02
+
+### Added
+
+- **10 selectable styles** for the statusline *and* the Stop-hook box, driven by one setting: `classic` (default, unchanged), `minimal`, `compact`, `detailed`, `bracket`, `ascii`, `dots`, `badge`, `emoji`, `mono`. A style bundles bar glyphs and widths, separators, labels, countdown / context-detail visibility, box borders and the color mode (`badge` paints each segment on a colored background; `mono` uses no color at all and bolds values past the red threshold; `ascii` is pure 7-bit on both surfaces). Switch with `CC_USAGE_MONITOR_STYLE=<name>` (env), `style` in the config file, or the new **`/cc-usage-monitor:style`** command, which renders all ten side by side (`node bin/config.js preview`) before asking. `barStyle` still composes on top of any style that has bars. Unknown names render as `classic` at runtime and are rejected by `set style`.
+- New `lib/theme.js` preset registry (pure data, no I/O on the hot path); `bin/config.js` gains `set style`, `preview [style]`, and `validStyles` / `styleHelp` / `currentStyle` in `get`. `/cc-usage-monitor:config` documents the new key.
+- `lib/format.js`: `paint()` accepts background colors and style arrays, `bar()` takes an explicit glyph set, and `makePainter(theme)` centralises the default / mono / badge color modes.
+- New `test/manifest.test.js`: the three manifests must agree on the version, the CHANGELOG must have a section for it, and every slash command needs front-matter.
+
+### Changed
+
+- **Pricing table refreshed for the 2026-09 model roster**, verified against the live platform.claude.com pricing page on 2026-09-02:
+  - **Fable 5.1 / Mythos 5.1** — `claude-fable-5-1` (incl. `[1m]`) renders as `Fable 5.1` and prices at $10/$50 per MTok with the new **flat $0.25/MTok cache-read rate** (0.025×, a quarter of Fable 5's $1). Cache writes keep the standard 1.25× / 2× multipliers ($12.50 / $20).
+  - **Opus 5** — $5/$25, same as Opus 4.8–4.5; **Opus 5 Fast** $10/$50.
+  - **Sonnet 5** — $2/$10 (the launch price is now the standard price; the planned $3/$15 increase was cancelled).
+  - Fast-mode premium rows for Opus 4.7 / 4.6 were removed: Opus 4.7 rejects `speed: "fast"` and Opus 4.6 bills it at standard rates, so those IDs now fall through to the plain $5/$25 rows.
+- **Version-boundary model matching** in `lib/pricing.js` replaces plain substring matching. A registry key only matches when it isn't followed by a further point-version, so `claude-fable-5-1` can never be mistaken for `fable-5`, and unlisted point releases (`claude-fable-5-2`, `claude-opus-5-1`, `claude-sonnet-4-7`, …) are reported as *unknown* instead of inheriting a predecessor's rates — Fable 5.1 changing only the cache-read price is exactly the case a "same family, same price" guess gets wrong. Date suffixes, Vertex `@date` and Bedrock `-v1:0` suffixes, and `-fast` still match.
+- The `sonnet-4` and `opus-4` rows now rely on that boundary rule: they match the bare, dated (`-20250514`) and Vertex (`@20250514`) forms of Sonnet 4 / Opus 4 — Vertex Opus 4 was previously unpriced — without swallowing unlisted 4.x point releases.
+
+### Fixed
+
+- The Stop-hook **Models** breakdown no longer lists the same model twice when a session logs it under two raw IDs (e.g. `claude-fable-5-1` and `claude-fable-5-1[1m]` after a context-mode switch) — `sessionCost` now merges rows by registry entry.
+
+### Tests
+
+- Pricing: Fable 5.1 / Opus 5 / Sonnet 5 rates, the flat Fable 5.1 cache-read price, version-boundary matching (`keyMatches`), pinned Sonnet 4, Bedrock / Vertex ID shapes, fast-mode fall-through, and breakdown merging.
+- New `test/models.test.js` end-to-end suite: `claude-fable-5-1[1m]` → `Fable 5.1` on both surfaces, a Fable 5.1 + Sonnet 5 transcript priced at the new rates (statusline `API≈~$0.111`, box `Models Fable 5.1 $0.088 • Sonnet 5 $0.022`), and `display_name` precedence.
+- Styles: every preset resolves with the full shape, env-over-config precedence, `barStyle` override rules, `classic` byte-identical to 0.7.x (verified over 288 fixture × env combinations), `ascii` pure-ASCII on both surfaces, `mono` free of color codes yet bold on high usage, `badge` background codes with a `NO_COLOR` fallback, rectangular boxes for every preset, and the `preview` / `set style` CLI paths. 165 tests total.
+
 ## [0.7.0] - 2026-06-10
 
 ### Added

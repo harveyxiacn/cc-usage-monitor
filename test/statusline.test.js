@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { runScript, STATUSLINE, withTranscript, withFableTranscript } = require('./helpers');
+const { stripAnsi } = require('../lib/format');
 
 test('statusline: full fixture shows model + 5h + 7d + tokens + API≈cost + lines', async () => {
   const { stdout, code } = await runScript(STATUSLINE, 'full.json', { CC_USAGE_MONITOR_SHOW: 'model,ctx,5h,7d,turn,session,cost' });
@@ -220,4 +221,206 @@ test('statusline: SHOW without session/cost skips the transcript walk yet render
   assert.match(stdout, /5h /);
   assert.doesNotMatch(stdout, /Σ/);
   assert.doesNotMatch(stdout, /API≈/);
+});
+
+// --- style presets -------------------------------------------------------
+//
+// One test per preset, each asserting the thing that makes that preset
+// recognisable. The classic tests above are the regression suite for "no
+// style set" — these only have to prove the theme reached the renderer.
+
+const styled = (name, fixture, env = {}) =>
+  runScript(STATUSLINE, fixture, { CC_USAGE_MONITOR_STYLE: name, ...env });
+
+test('style classic: explicitly naming the default matches the default output', async () => {
+  const named = await styled('classic', 'fable.json');
+  const implicit = await runScript(STATUSLINE, 'fable.json');
+  assert.equal(named.code, 0);
+  assert.equal(named.stdout, implicit.stdout);
+  assert.match(named.stdout, /ctx ▰▰▱▱▱ 32% \(320k\/1\.0M\)/);
+  assert.match(named.stdout, /│/);
+});
+
+test('style: an unknown name renders exactly like classic', async () => {
+  const bogus = await styled('nonsense', 'fable.json');
+  const classic = await runScript(STATUSLINE, 'fable.json');
+  assert.equal(bogus.code, 0);
+  assert.equal(bogus.stdout, classic.stdout);
+});
+
+test('style minimal: no bar glyphs, no ctx detail, percentages survive', async () => {
+  const { stdout, code } = await styled('minimal', 'fable.json');
+  assert.equal(code, 0);
+  assert.doesNotMatch(stdout, /▰/);
+  assert.doesNotMatch(stdout, /▱/);
+  assert.doesNotMatch(stdout, /\(320k\/1\.0M\)/);
+  assert.doesNotMatch(stdout, /\(\d+[hdm]/); // no reset countdown either
+  assert.match(stdout, /ctx 32%/);
+  assert.match(stdout, /5h 18%/);
+  assert.match(stdout, /·/);
+});
+
+test('style compact: 3-cell shade bars and a pipe separator', async () => {
+  const { stdout, code } = await styled('compact', 'fable.json');
+  assert.equal(code, 0);
+  assert.match(stdout, /ctx █░░ 32%/);
+  assert.match(stdout, /5h █░░ 18%/);
+  assert.doesNotMatch(stdout, /████/); // never more than 3 cells
+  assert.match(stdout, /\|/);
+  assert.doesNotMatch(stdout, /\(320k\/1\.0M\)/);
+});
+
+test('style detailed: long labels and 8-cell bars', async () => {
+  const { stdout, code } = await styled('detailed', 'fable.json');
+  assert.equal(code, 0);
+  assert.match(stdout, /5-hour/);
+  assert.match(stdout, /7-day/);
+  assert.match(stdout, /context [▰▱]{8} 32%/);
+  assert.match(stdout, /\(320k\/1\.0M\)/);
+});
+
+test('style bracket: every bar is wrapped in square brackets', async () => {
+  const { stdout, code } = await styled('bracket', 'fable.json');
+  assert.equal(code, 0);
+  assert.match(stdout, /\[▰/);
+  assert.match(stdout, /ctx \[▰▰▱▱▱\] 32%/);
+});
+
+test('style ascii: the whole statusline is 7-bit ASCII', async () => {
+  const { stdout, code } = await styled('ascii', 'fable.json', {
+    CC_USAGE_MONITOR_SHOW: 'model,ctx,5h,7d,turn,session,cost,lines',
+  });
+  assert.equal(code, 0);
+  assert.match(stripAnsi(stdout), /^[\x00-\x7f]*$/);
+  assert.match(stdout, /ctx \[##---\] 32%/);
+  assert.match(stdout, /\^320k/); // up glyph became ^
+});
+
+test('style ascii: colored output is still 7-bit once ANSI is stripped', async () => {
+  const { stdout, code } = await styled('ascii', 'high-usage.json', { NO_COLOR: '' });
+  assert.equal(code, 0);
+  assert.match(stripAnsi(stdout), /^[\x00-\x7f]*$/);
+});
+
+test('style ascii: the empty-payload message uses a plain ellipsis', async () => {
+  const { spawn } = require('node:child_process');
+  const child = spawn(process.execPath, [STATUSLINE], {
+    env: { ...process.env, NO_COLOR: '1', CC_USAGE_MONITOR_STYLE: 'ascii' },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  let stdout = '';
+  child.stdout.on('data', (c) => { stdout += c; });
+  child.stdin.end('');
+  const code = await new Promise((resolve) => child.on('close', resolve));
+  assert.equal(code, 0);
+  assert.match(stdout, /waiting for first turn\.\.\./);
+  assert.match(stdout, /^[\x00-\x7f]*$/);
+});
+
+test('style dots: round bar glyphs and dot separators', async () => {
+  const { stdout, code } = await styled('dots', 'fable.json');
+  assert.equal(code, 0);
+  assert.match(stdout, /●/);
+  assert.match(stdout, /ctx ●●○○○ 32%/);
+  assert.match(stdout, /•/);
+});
+
+test('style badge: colors on produces background-colored pills', async () => {
+  // runScript sets NO_COLOR=1 by default; '' turns colors back on.
+  const { stdout, code } = await styled('badge', 'fable.json', { NO_COLOR: '' });
+  assert.equal(code, 0);
+  assert.match(stdout, /\x1b\[4/);          // some background code
+  assert.match(stdout, /\x1b\[30m\x1b\[46m/); // model pill: black on cyan
+  assert.doesNotMatch(stdout, /│/);          // pills replace the separator
+});
+
+test('style badge: colors off degrades to [ bracketed ] segments', async () => {
+  const { stdout, code } = await styled('badge', 'fable.json');
+  assert.equal(code, 0);
+  assert.doesNotMatch(stdout, /\x1b\[/);
+  assert.match(stdout, /\[ ctx ▰▰▱▱▱ 32% \]/);
+  assert.match(stdout, /\[ 5h ▰▱▱▱▱ 18% \]/);
+  assert.match(stdout, /\[ Fable 5[\d.]* \]/);
+});
+
+test('style emoji: emoji labels replace the word labels', async () => {
+  const { stdout, code } = await styled('emoji', 'fable.json', {
+    CC_USAGE_MONITOR_SHOW: 'model,ctx,5h,7d,cost',
+  });
+  assert.equal(code, 0);
+  assert.match(stdout, /🧠 ▰▰▱▱▱ 32%/);
+  assert.match(stdout, /🤖/);
+  assert.match(stdout, /⏱/);
+  assert.match(stdout, /📅/);
+  assert.doesNotMatch(stdout, /ctx /);
+});
+
+test('style mono: colors on yields weight only, never hue', async () => {
+  const { stdout, code } = await styled('mono', 'high-usage.json', { NO_COLOR: '' });
+  assert.equal(code, 0);
+  assert.doesNotMatch(stdout, /\x1b\[(3\d|9\d|4\d|10\d)m/);
+  // 95.4% is past the red threshold, so it renders bold.
+  assert.match(stdout, /\x1b\[1m/);
+  assert.match(stdout, /━/);
+});
+
+test('style mono: NO_COLOR strips even the bold/dim weights', async () => {
+  const { stdout, code } = await styled('mono', 'high-usage.json');
+  assert.equal(code, 0);
+  assert.doesNotMatch(stdout, /\x1b\[/);
+  assert.match(stdout, /5h ━━━━━ 95%/);
+});
+
+test('style: barStyle overrides a preset bar but leaves minimal bar-less', async () => {
+  const dots = await styled('dots', 'fable.json', { CC_USAGE_MONITOR_BAR_STYLE: 'square' });
+  assert.equal(dots.code, 0);
+  assert.match(dots.stdout, /ctx ■■□□□ 32%/);
+
+  const minimal = await styled('minimal', 'fable.json', { CC_USAGE_MONITOR_BAR_STYLE: 'square' });
+  assert.equal(minimal.code, 0);
+  assert.doesNotMatch(minimal.stdout, /■/);
+  assert.match(minimal.stdout, /ctx 32%/);
+});
+
+test('style: the config file selects a style and the env var overrides it', async () => {
+  const path = require('node:path');
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const tmp = path.join(os.tmpdir(), `cc-usage-monitor-style-sl-${process.pid}.json`);
+  fs.writeFileSync(tmp, JSON.stringify({ style: 'dots' }));
+  try {
+    const fromFile = await runScript(STATUSLINE, 'fable.json', { CC_USAGE_MONITOR_CONFIG: tmp });
+    assert.equal(fromFile.code, 0);
+    assert.match(fromFile.stdout, /●●○○○/);
+
+    const fromEnv = await runScript(STATUSLINE, 'fable.json', {
+      CC_USAGE_MONITOR_CONFIG: tmp,
+      CC_USAGE_MONITOR_STYLE: 'compact',
+    });
+    assert.equal(fromEnv.code, 0);
+    assert.doesNotMatch(fromEnv.stdout, /●/);
+    assert.match(fromEnv.stdout, /█/);
+  } finally {
+    fs.unlinkSync(tmp);
+  }
+});
+
+test('statusline style ascii: stays 7-bit with barStyle=square and marks a computed cost as API=~$', async () => {
+  const { stripAnsi } = require('../lib/format');
+  const { stdout, code } = await runScript(
+    STATUSLINE, 'fable.json',
+    { CC_USAGE_MONITOR_STYLE: 'ascii', CC_USAGE_MONITOR_BAR_STYLE: 'square' },
+    withFableTranscript
+  );
+  assert.equal(code, 0);
+  assert.match(stripAnsi(stdout), /^[\x00-\x7f]*$/);
+  assert.match(stdout, /\[#+-*\]/);
+  assert.match(stdout, /API=~\$0\.101/);
+  assert.doesNotMatch(stdout, /~~/);
+});
+
+test('statusline style badge: session pill keeps a visible delimiter between tokens, lines and cache', async () => {
+  const { stdout, code } = await runScript(STATUSLINE, 'full.json', { CC_USAGE_MONITOR_STYLE: 'badge' }, withTranscript);
+  assert.equal(code, 0);
+  assert.match(stdout, /Σ↑892 ↓250 · \+156\/-23 · cache/);
 });

@@ -1,0 +1,41 @@
+{
+  "cwd": "/home/example/project",
+  "session_id": "fixture-fable-5-1",
+  "model": {
+    "id": "claude-fable-5-1[1m]"
+  },
+  "workspace": {
+    "current_dir": "/home/example/project",
+    "project_dir": "/home/example/project"
+  },
+  "cost": {
+    "total_duration_ms": 60000,
+    "total_api_duration_ms": 4100,
+    "total_lines_added": 12,
+    "total_lines_removed": 3
+  },
+  "context_window": {
+    "total_input_tokens": 320000,
+    "total_output_tokens": 2400,
+    "context_window_size": 1000000,
+    "used_percentage": 32,
+    "remaining_percentage": 68,
+    "current_usage": {
+      "input_tokens": 1000,
+      "output_tokens": 2400,
+      "cache_creation_input_tokens": 9000,
+      "cache_read_input_tokens": 310000
+    }
+  },
+  "rate_limits": {
+    "five_hour": {
+      "used_percentage": 18,
+      "resets_at": 9999999999
+    },
+    "seven_day": {
+      "used_percentage": 36,
+      "resets_at": 9999999999
+    }
+  },
+  "version": "2.2.10"
+}

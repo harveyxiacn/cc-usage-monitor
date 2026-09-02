@@ -7,25 +7,34 @@
  *
  *   node bin/config.js get
  *   node bin/config.js set show model,ctx,5h,7d,cost
+ *   node bin/config.js set style dots
  *   node bin/config.js set barStyle shade
  *   node bin/config.js set twoLine true | set width 120 | set quiet false
  *   node bin/config.js reset [key]
+ *   node bin/config.js preview [style]
  *
  * `get` prints JSON: current saved config, the config file path, and the
  * valid values, so an agent can render a checklist without guessing.
+ * `preview` renders a sample statusline in every style so the user can pick
+ * one by eye instead of by name.
  * Exits non-zero with a message on stderr for invalid input.
  */
+
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 const {
   VALID_COMPONENTS,
   VALID_BAR_STYLES,
+  VALID_STYLES,
   configPath,
   loadConfig,
   saveConfig,
 } = require('../lib/config');
+const { themeHelp, SAMPLE_PAYLOAD } = require('../lib/theme');
 
 const COMPONENT_HELP = {
-  model: 'Model name (e.g. "Fable 5")',
+  model: 'Model name (e.g. "Fable 5.1")',
   ctx: 'Context-window bar + % + (used/total)',
   '5h': '5-hour rate-limit bar + reset countdown',
   '7d': '7-day rate-limit bar + reset countdown',
@@ -40,6 +49,18 @@ function fail(msg) {
   process.exit(1);
 }
 
+/**
+ * The style that would actually render right now: env var, then the config
+ * file, then the default. An unrecognised name reports as `classic` because
+ * that is what lib/theme falls back to at render time — the answer should
+ * match the pixels, not the setting.
+ */
+function currentStyle() {
+  const raw = process.env.CC_USAGE_MONITOR_STYLE || loadConfig().style || 'classic';
+  const name = String(raw).trim().toLowerCase();
+  return VALID_STYLES.includes(name) ? name : 'classic';
+}
+
 function get() {
   process.stdout.write(JSON.stringify({
     configPath: configPath(),
@@ -48,10 +69,58 @@ function get() {
     validComponents: VALID_COMPONENTS,
     componentHelp: COMPONENT_HELP,
     validBarStyles: VALID_BAR_STYLES,
+    validStyles: VALID_STYLES,
+    styleHelp: themeHelp(),
+    currentStyle: currentStyle(),
     booleanKeys: ['twoLine', 'quiet', 'noSession'],
     numberKeys: ['width'],
     note: 'Environment variables (CC_USAGE_MONITOR_*) override this file.',
   }, null, 2) + '\n');
+}
+
+const STATUSLINE = path.join(__dirname, 'statusline.js');
+// Wide enough that no style ever wraps, so every preview is one line.
+const PREVIEW_WIDTH = '400';
+const NAME_COLUMN = 9;
+
+/**
+ * Render the sample payload once per style (or once, for a named style).
+ *
+ * Shelling out to the real statusline is the point: the preview is then the
+ * genuine renderer, not a second implementation that could drift. The user's
+ * other settings (show, barStyle, colors) are deliberately inherited so the
+ * preview shows *their* line in each style — only wrapping is pinned.
+ */
+function preview(only) {
+  if (only && !VALID_STYLES.includes(only)) {
+    fail(`unknown style "${only}". Valid: ${VALID_STYLES.join(', ')}`);
+  }
+  const names = only ? [only] : VALID_STYLES;
+  const input = JSON.stringify(SAMPLE_PAYLOAD);
+  const active = currentStyle();
+
+  for (const name of names) {
+    const res = spawnSync(process.execPath, [STATUSLINE], {
+      input,
+      encoding: 'utf8',
+      // A wedged renderer must not hang the slash command ten times over.
+      timeout: 5000,
+      env: {
+        ...process.env,
+        CC_USAGE_MONITOR_STYLE: name,
+        CC_USAGE_MONITOR_TWO_LINE: '0',
+        CC_USAGE_MONITOR_WIDTH: PREVIEW_WIDTH,
+      },
+    });
+    // A wrapped or failed render must not break the table layout; a failed
+    // one says so instead of printing a bare style name.
+    const failed = Boolean(res.error) || res.status !== 0;
+    const line = failed
+      ? `(render failed${res.error ? ': ' + res.error.message : ', exit ' + res.status})`
+      : String(res.stdout || '').replace(/\r?\n/g, ' ').trimEnd();
+    const marker = name === active ? '*' : ' ';
+    process.stdout.write(`${name.padEnd(NAME_COLUMN)}${marker} ${line}\n`);
+  }
 }
 
 function parseBool(value, key) {
@@ -72,6 +141,12 @@ function set(key, value) {
       cfg.show = items;
       break;
     }
+    case 'style':
+      if (!VALID_STYLES.includes(value)) {
+        fail(`unknown style "${value}". Valid: ${VALID_STYLES.join(', ')}`);
+      }
+      cfg.style = value;
+      break;
     case 'barStyle':
       if (!VALID_BAR_STYLES.includes(value)) {
         fail(`unknown bar style "${value}". Valid: ${VALID_BAR_STYLES.join(', ')}`);
@@ -90,7 +165,7 @@ function set(key, value) {
       break;
     }
     default:
-      fail(`unknown key "${key}". Valid: show, barStyle, twoLine, width, quiet, noSession`);
+      fail(`unknown key "${key}". Valid: show, style, barStyle, twoLine, width, quiet, noSession`);
   }
   const file = saveConfig(cfg);
   process.stdout.write(`saved ${key} to ${file}\n`);
@@ -124,6 +199,9 @@ switch (cmd) {
   case 'reset':
     reset(key);
     break;
+  case 'preview':
+    preview(key);
+    break;
   default:
-    fail(`unknown command "${cmd}". Usage: config.js get | set <key> <value> | reset [key]`);
+    fail(`unknown command "${cmd}". Usage: config.js get | set <key> <value> | reset [key] | preview [style]`);
 }

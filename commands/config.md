@@ -1,5 +1,5 @@
 ---
-description: Customize which cc-usage-monitor components are shown, pick a bar style, and persist the choice
+description: Customize which cc-usage-monitor components are shown, pick a style and bar style, and persist the choice
 allowed-tools: Bash(node*)
 ---
 
@@ -19,9 +19,25 @@ node "${CLAUDE_PLUGIN_ROOT}/bin/config.js" get
 ```
 
 This prints the saved config, the config file path, the valid component keys
-with one-line descriptions, and the valid bar styles.
+with one-line descriptions, the valid bar styles, and the ten style presets
+(`validStyles` / `styleHelp` / `currentStyle`).
 
-## Step 2 — Decide what to change
+## Step 2 — Style (optional)
+
+`style` picks a whole look — glyphs, bar widths, labels, separators and
+colors — for both the statusline and the Stop-hook box. There are ten:
+`classic`, `minimal`, `compact`, `detailed`, `bracket`, `ascii`, `dots`,
+`badge`, `emoji`, `mono`.
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/bin/config.js" preview      # renders all ten
+node "${CLAUDE_PLUGIN_ROOT}/bin/config.js" set style dots
+```
+
+For a guided pick with the previews rendered side by side, send the user to
+`/cc-usage-monitor:style` instead of doing it here.
+
+## Step 3 — Decide what to change
 
 **If the user already said what they want** (in the command arguments or the
 conversation), skip the questions and apply it directly.
@@ -45,7 +61,7 @@ transcripts; prefer `ascii` bars only when their terminal mangles Unicode.
    `square ■■□□□`, `thin ━━╌╌╌`, `ascii ##---`. Skip this question if the
    user only asked about components.
 
-## Step 3 — Apply
+## Step 4 — Apply
 
 Component order matters (it's the display order). Preserve the canonical
 order `model, ctx, 5h, 7d, turn, session, cost, lines` unless the user asked
@@ -56,11 +72,12 @@ node "${CLAUDE_PLUGIN_ROOT}/bin/config.js" set show model,ctx,5h,7d,cost
 node "${CLAUDE_PLUGIN_ROOT}/bin/config.js" set barStyle shade
 ```
 
-Other available keys: `twoLine true|false`, `width <columns>`,
-`quiet true|false` (silences the post-task box), `noSession true|false`
-(skips the transcript walk). `reset [key]` clears a setting (or all of them).
+Other available keys: `style <preset>` (Step 2), `twoLine true|false`,
+`width <columns>`, `quiet true|false` (silences the post-task box),
+`noSession true|false` (skips the transcript walk). `reset [key]` clears a
+setting (or all of them).
 
-## Step 4 — Confirm
+## Step 5 — Confirm
 
 Tell the user what was saved and where, and that it takes effect on the next
 assistant turn. If they have a `CC_USAGE_MONITOR_SHOW` or

@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { runScript, ON_STOP, withTranscript, withFableTranscript } = require('./helpers');
+const { stripAnsi } = require('../lib/format');
 
 test('on-stop: full fixture prints all five sections on stderr', async () => {
   const { stdout, stderr, code } = await runScript(ON_STOP, 'full.json');
@@ -136,4 +137,127 @@ test('on-stop: missing transcript_path does NOT print Session line', async () =>
   assert.equal(code, 0);
   // "Session" should not appear as a section label (cost line is "Cost", turn line is "This turn")
   assert.doesNotMatch(stderr, /Session\s+↑/);
+});
+
+// --- style presets -------------------------------------------------------
+//
+// The box has to follow the same preset as the statusline: bar width from
+// `boxBarWidth`, borders and the bullet from `theme.box`, and the color
+// rules of the mode. Every row must stay inside the frame.
+
+const styledBox = (name, fixture = 'full.json', env = {}, mutate = null) =>
+  runScript(ON_STOP, fixture, { CC_USAGE_MONITOR_STYLE: name, ...env }, mutate);
+
+/** Every rendered row must be the same visible width, or the frame is broken. */
+function assertRectangular(stderr) {
+  const lines = stripAnsi(stderr).replace(/\n$/, '').split('\n');
+  assert.ok(lines.length >= 3, `expected a box, got: ${JSON.stringify(stderr)}`);
+  const width = lines[0].length;
+  for (const line of lines) {
+    assert.equal(line.length, width, `ragged box row: ${JSON.stringify(line)}`);
+  }
+  return lines;
+}
+
+test('on-stop style classic: naming the default matches the default box', async () => {
+  const named = await styledBox('classic');
+  const implicit = await runScript(ON_STOP, 'full.json');
+  assert.equal(named.code, 0);
+  assert.equal(named.stderr, implicit.stderr);
+});
+
+test('on-stop style ascii: the whole box is 7-bit ASCII with + corners', async () => {
+  const { stderr, code } = await styledBox('ascii', 'fable.json', {}, withFableTranscript);
+  assert.equal(code, 0);
+  assert.match(stripAnsi(stderr), /^[\x00-\x7f]*$/);
+  const lines = assertRectangular(stderr);
+  assert.ok(lines[0].startsWith('+-'), lines[0]);
+  assert.ok(lines[0].endsWith('-+'), lines[0]);
+  assert.ok(lines[lines.length - 1].startsWith('+-'), lines[lines.length - 1]);
+  assert.match(stderr, /\| 5h window/);
+  assert.match(stderr, /\[#+-*\]/);       // ASCII bar in brackets
+  assert.match(stderr, / \* /);            // ASCII bullet
+  assert.match(stderr, /API=\$/);          // ASCII approx
+  assert.match(stderr, /\^ 320k/);         // ASCII up glyph
+});
+
+test('on-stop style minimal: percentages only, no bar cells', async () => {
+  const { stderr, code } = await styledBox('minimal');
+  assert.equal(code, 0);
+  assert.doesNotMatch(stderr, /▰/);
+  assert.doesNotMatch(stderr, /▱/);
+  assert.match(stderr, /5h window\s+24%/);
+  assert.match(stderr, /65% cached/);
+  assertRectangular(stderr);
+});
+
+test('on-stop style mono: no color codes anywhere in the box', async () => {
+  const { stderr, code } = await styledBox('mono', 'high-usage.json', { NO_COLOR: '' });
+  assert.equal(code, 0);
+  assert.doesNotMatch(stderr, /\x1b\[(3\d|9\d|4\d|10\d)m/);
+  assert.match(stderr, /━/);
+  // 95.4% is past the red threshold, so it renders bold instead.
+  assert.match(stderr, /\x1b\[1m/);
+  assertRectangular(stderr);
+});
+
+test('on-stop style compact/detailed: boxBarWidth drives the bar length', async () => {
+  const compact = await styledBox('compact');
+  assert.equal(compact.code, 0);
+  assert.match(compact.stderr, /5h window {2}[█░]{8} {2}/);
+  assert.doesNotMatch(compact.stderr, /[█░]{9}/);
+  assertRectangular(compact.stderr);
+
+  const detailed = await styledBox('detailed');
+  assert.equal(detailed.code, 0);
+  assert.match(detailed.stderr, /5h window {2}[▰▱]{16} {2}/);
+  assertRectangular(detailed.stderr);
+});
+
+test('on-stop style bracket: box bars are wrapped in square brackets', async () => {
+  const { stderr, code } = await styledBox('bracket');
+  assert.equal(code, 0);
+  assert.match(stderr, /\[[▰▱]{12}\]/);
+  assertRectangular(stderr);
+});
+
+test('on-stop styles emoji, badge and dots each print an intact box', async () => {
+  for (const name of ['emoji', 'badge', 'dots']) {
+    const { stderr, code } = await styledBox(name);
+    assert.equal(code, 0, name);
+    assert.match(stderr, /cc-usage-monitor/, name);
+    assert.match(stderr, /5h window/, name);
+    assertRectangular(stderr);
+  }
+});
+
+test('on-stop style dots: the box uses the round bar glyphs', async () => {
+  const { stderr, code } = await styledBox('dots');
+  assert.equal(code, 0);
+  assert.match(stderr, /[●○]{12}/);
+});
+
+test('on-stop style badge: pills stay out of the box, colors stay in', async () => {
+  const { stderr, code } = await styledBox('badge', 'full.json', { NO_COLOR: '' });
+  assert.equal(code, 0);
+  // No background codes inside the frame — the box renders like classic.
+  assert.doesNotMatch(stderr, /\x1b\[4[0-7]m/);
+  assert.doesNotMatch(stderr, /\x1b\[10[0-7]m/);
+  assert.match(stderr, /\x1b\[36m/); // ordinary foreground color still there
+  assertRectangular(stderr);
+});
+
+test('on-stop style: the config file selects the box style too', async () => {
+  const path = require('node:path');
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const tmp = path.join(os.tmpdir(), `cc-usage-monitor-style-box-${process.pid}.json`);
+  fs.writeFileSync(tmp, JSON.stringify({ style: 'ascii' }));
+  try {
+    const { stderr, code } = await runScript(ON_STOP, 'full.json', { CC_USAGE_MONITOR_CONFIG: tmp });
+    assert.equal(code, 0);
+    assert.match(stripAnsi(stderr), /^[\x00-\x7f]*$/);
+  } finally {
+    fs.unlinkSync(tmp);
+  }
 });

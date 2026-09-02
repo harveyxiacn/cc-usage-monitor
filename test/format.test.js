@@ -5,6 +5,10 @@ const assert = require('node:assert/strict');
 
 const {
   bar,
+  BAR_STYLES,
+  makePainter,
+  C,
+  COLOR_ENABLED,
   timeUntil,
   formatCost,
   formatTokens,
@@ -155,4 +159,91 @@ test('stripAnsi: removes color escapes and measures visible width', () => {
   // Plain strings pass through unchanged; non-strings are coerced.
   assert.equal(stripAnsi('plain'), 'plain');
   assert.equal(stripAnsi(42), '42');
+});
+
+// --- theme support -------------------------------------------------------
+
+test('bar: an explicit style object beats the env-var lookup', () => {
+  const prev = process.env.CC_USAGE_MONITOR_BAR_STYLE;
+  process.env.CC_USAGE_MONITOR_BAR_STYLE = 'shade';
+  try {
+    // Explicit wins...
+    assert.equal(bar(50, 4, { filled: '#', empty: '-', unknown: '?' }), '##--');
+    assert.equal(bar(null, 3, { filled: '#', empty: '-', unknown: '?' }), '???');
+    // ...and omitting it keeps the historic env-var behaviour.
+    assert.equal(bar(50, 4), '██░░');
+  } finally {
+    if (prev === undefined) delete process.env.CC_USAGE_MONITOR_BAR_STYLE;
+    else process.env.CC_USAGE_MONITOR_BAR_STYLE = prev;
+  }
+});
+
+test('bar: BAR_STYLES is exported with the documented sets', () => {
+  assert.deepEqual(Object.keys(BAR_STYLES), ['block', 'shade', 'square', 'thin', 'ascii']);
+  assert.deepEqual(BAR_STYLES.block, { filled: '▰', empty: '▱', unknown: '─' });
+});
+
+test('paint: array colors combine codes; single strings are unchanged', () => {
+  if (!COLOR_ENABLED) {
+    // NO_COLOR in the developer's shell — everything must be a passthrough.
+    assert.equal(paint('x', ['black', 'bgGreen']), 'x');
+    assert.equal(paint('x', 'cyan'), 'x');
+    return;
+  }
+  assert.equal(paint(' x ', ['black', 'bgGreen']), C.black + C.bgGreen + ' x ' + C.reset);
+  assert.equal(paint('x', 'cyan'), C.cyan + 'x' + C.reset);
+  // Unknown names inside an array are skipped, not emitted as empty codes.
+  assert.equal(paint('x', ['nope', 'bgRed']), C.bgRed + 'x' + C.reset);
+  // An array of only unknown names produces no escape at all.
+  assert.equal(paint('x', ['nope']), 'x');
+  // Legacy quirk preserved: an unknown *string* still appends a reset.
+  assert.equal(paint('x', 'nope'), 'x' + C.reset);
+});
+
+test('paint: background codes are the standard SGR values', () => {
+  assert.equal(C.bgGreen, '\x1b[42m');
+  assert.equal(C.bgYellow, '\x1b[43m');
+  assert.equal(C.bgRed, '\x1b[41m');
+  assert.equal(C.bgCyan, '\x1b[46m');
+  assert.equal(C.bgMagenta, '\x1b[45m');
+  assert.equal(C.bgBlue, '\x1b[44m');
+  assert.equal(C.bgGray, '\x1b[100m');
+  assert.equal(C.black, '\x1b[30m');
+  assert.equal(C.white, '\x1b[97m');
+});
+
+test('makePainter: default paints, mono strips hue, badge builds pills', () => {
+  const def = makePainter({ color: 'default', sep: '│' });
+  assert.equal(def.mode, 'default');
+  assert.equal(stripAnsi(def.sep), ' │ ');
+  assert.equal(stripAnsi(def.paintStatus('95%', 'red')), '95%');
+
+  const mono = makePainter({ color: 'mono', sep: '│' });
+  const monoOut = [
+    mono.paint('label', 'cyan'),
+    mono.paint('x', 'gray'),
+    mono.paintStatus('95%', 'red'),
+    mono.paintStatus('12%', 'green'),
+    mono.sep,
+  ].join('');
+  // Weight (bold/dim) is allowed in mono; hue never is.
+  assert.doesNotMatch(monoOut, /\x1b\[(3\d|9\d|4\d|10\d)m/);
+  assert.equal(mono.paint('label', 'cyan'), 'label');
+  if (COLOR_ENABLED) {
+    assert.equal(mono.paintStatus('95%', 'red'), C.bold + '95%' + C.reset);
+    assert.equal(mono.paintStatus('12%', 'green'), '12%');
+    assert.equal(mono.paint('x', 'gray'), C.dim + 'x' + C.reset);
+  }
+
+  const badge = makePainter({ color: 'badge', sep: '' });
+  assert.equal(badge.sep, ' ');
+  assert.equal(badge.paint('inner', 'cyan'), 'inner'); // the pill carries the color
+  if (COLOR_ENABLED) {
+    assert.equal(badge.badge('ctx 32%', 'bgGreen'), C.black + C.bgGreen + ' ctx 32% ' + C.reset);
+  } else {
+    assert.equal(badge.badge('ctx 32%', 'bgGreen'), '[ ctx 32% ]');
+  }
+
+  // A surface can opt out of a theme's mode (the Stop-hook box does).
+  assert.equal(makePainter({ color: 'badge', sep: '│' }, 'default').mode, 'default');
 });
