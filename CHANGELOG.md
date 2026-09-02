@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-09-02
+
+### Added
+
+- **Style overrides** — fine-tune any of the ten presets without leaving it. Seven orthogonal knobs layer on top of the active style, each available as a config-file key and an environment variable (env wins, as everywhere else): `sep` / `CC_USAGE_MONITOR_SEP` (separator glyph), `barWidth` / `CC_USAGE_MONITOR_BAR_WIDTH` (statusline bar cells, 1–20), `boxBarWidth` / `CC_USAGE_MONITOR_BOX_BAR_WIDTH` (Stop-hook bar cells, 1–40), `brackets` / `CC_USAGE_MONITOR_BRACKETS` (two characters such as `[]` or `()`, or `none`), `showReset` / `CC_USAGE_MONITOR_SHOW_RESET`, `showCtxDetail` / `CC_USAGE_MONITOR_CTX_DETAIL`, and `labels` / `CC_USAGE_MONITOR_LABELS` (per-label text, e.g. `ctx=context,5h=5-hour`; an empty value hides a label). Overrides apply to every preset — `ascii` still keeps its 7-bit bar glyphs, and `minimal` stays bar-less — and `node bin/config.js preview` shows them applied to all ten. Invalid values are ignored at render time and rejected by `set`.
+- `bin/config.js`: `set` / `reset` for each override (`set labels …` merges key by key), and `get` now reports `overrideKeys`, `overrideHelp` and `effective` — the fully resolved look after env, config and overrides — so `/cc-usage-monitor:style` can show the combined result.
+- `/cc-usage-monitor:style` gains a "fine-tune" step; `/cc-usage-monitor:config` lists the new keys.
+
+### Tests
+
+- 40 new tests (205 total): override parsing and validation for every key (bad widths, 4-character brackets, blank separators, unknown labels), `brackets none` on `bracket`, label merge and blank, `minimal` ignoring bar geometry, `ascii` keeping its bar glyphs while other overrides apply, config-file validation and env bridging per key (never overwriting a set variable), CLI `set` / `reset` / `get` (`overrideKeys`, `overrideHelp`, `effective`), each override visible in the rendered statusline and box (which stays rectangular), and overrides composing with non-classic presets.
+
 ## [0.8.0] - 2026-09-02
 
 ### Added

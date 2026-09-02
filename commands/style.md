@@ -65,6 +65,38 @@ node "${CLAUDE_PLUGIN_ROOT}/bin/config.js" set style <name>
 Confirm: the style, the config file path, and that it is live on the next
 assistant turn.
 
+## Fine-tune the chosen style
+
+A preset is a whole look; seven keys adjust one aspect of it without
+leaving the preset. Offer these only if the user asks for a tweak ("shorter
+bars", "no countdown", "spell out the labels") — don't walk through them
+after every pick.
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/bin/config.js" set sep »                      # separator, 1-3 chars
+node "${CLAUDE_PLUGIN_ROOT}/bin/config.js" set barWidth 8                 # statusline bar cells, 1-20
+node "${CLAUDE_PLUGIN_ROOT}/bin/config.js" set boxBarWidth 16             # Stop-hook box bar cells, 1-40
+node "${CLAUDE_PLUGIN_ROOT}/bin/config.js" set brackets "<>"              # 2 chars, or `none` to unwrap
+node "${CLAUDE_PLUGIN_ROOT}/bin/config.js" set showReset false            # hide the (2h 13m) countdown
+node "${CLAUDE_PLUGIN_ROOT}/bin/config.js" set showCtxDetail false        # hide the (320k/1.0M) suffix
+node "${CLAUDE_PLUGIN_ROOT}/bin/config.js" set labels ctx=context,5h=5-hour   # rename labels
+```
+
+- `set labels` **merges**: renaming `ctx` keeps a previously renamed `5h`.
+  An empty value (`set labels ctx=`) hides that label; the keys are `ctx`,
+  `5h`, `7d`, `cache`, `turn`, `session`, `cost`, `model`.
+- `preview` shows every preset **with these overrides applied**, and
+  `get` reports the combined result as `effective` — read it back instead
+  of predicting what the two settings add up to.
+- The matching `CC_USAGE_MONITOR_*` variables (`_SEP`, `_BAR_WIDTH`,
+  `_BOX_BAR_WIDTH`, `_BRACKETS`, `_SHOW_RESET`, `_CTX_DETAIL`, `_LABELS`)
+  override the file, exactly like `CC_USAGE_MONITOR_STYLE` does.
+- `reset <key>` drops one override; `reset` alone clears every setting.
+- They apply to every preset, with two deliberate exceptions: `minimal` has
+  no bars, so `barWidth`/`brackets` do nothing there, and `ascii` keeps its
+  7-bit bar glyphs. An invalid value is ignored at render time, so a typo
+  can never blank the statusline — `set` rejects it with the valid range.
+
 ## Notes to pass on when relevant
 
 - `CC_USAGE_MONITOR_STYLE` (environment variable) **overrides** the config

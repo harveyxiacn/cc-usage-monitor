@@ -203,8 +203,18 @@ resolve the theme once at startup (after `applyConfigToEnv()`, so the
 `style` config key can reach it) and thread it through every renderer;
 nothing is looked up per segment. `CC_USAGE_MONITOR_BAR_STYLE` overrides
 the glyphs of any preset that has bars, never re-enabling them on
-`minimal`. An unknown name falls back to `classic` — a typo in a shell
-profile must not blank the statusline.
+`minimal` (and never on `ascii`, which locks its 7-bit glyphs). An unknown
+name falls back to `classic` — a typo in a shell profile must not blank the
+statusline.
+
+On top of the preset sit seven **overrides** — `sep`, `barWidth`,
+`boxBarWidth`, `brackets`, `showReset`, `showCtxDetail`, `labels` — each a
+config key bridged into a `CC_USAGE_MONITOR_*` variable exactly like the
+other settings, and read by `resolveTheme()` after the preset and the
+`barStyle` glyph override. They are the answer to "I want `detailed`'s
+information with `ascii`'s characters" without a free-form theme builder:
+a preset stays a tested, coherent whole, and the overrides are few enough to
+validate and preview. Invalid values are dropped at render time.
 
 The Stop-hook box is at least 60 columns wide inside, growing to fit the
 longest row so the right border always lines up.
@@ -244,7 +254,7 @@ hook (we don't print empty boxes).
 | `statusline.test.js` | Pipe each fixture into the real `bin/statusline.js`; assert stdout content, wrapping, computed-cost fallback, and one distinguishing pattern per style. |
 | `on-stop.test.js`    | Same approach for the Stop hook; verify output goes to stderr, the Models breakdown, `(est.)` labelling, `CC_USAGE_MONITOR_QUIET=1`, and that every styled box stays rectangular. |
 
-Total: 165 tests, runtime ≈ 4 s, no external deps.
+Total: 205 tests, runtime ≈ 4 s, no external deps.
 
 ## Future work
 

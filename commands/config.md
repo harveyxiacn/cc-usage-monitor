@@ -74,8 +74,13 @@ node "${CLAUDE_PLUGIN_ROOT}/bin/config.js" set barStyle shade
 
 Other available keys: `style <preset>` (Step 2), `twoLine true|false`,
 `width <columns>`, `quiet true|false` (silences the post-task box),
-`noSession true|false` (skips the transcript walk). `reset [key]` clears a
-setting (or all of them).
+`noSession true|false` (skips the transcript walk), and the seven style
+overrides that fine-tune the chosen preset — `sep »` (1-3 chars),
+`barWidth 8` (1-20), `boxBarWidth 16` (1-40), `brackets []` (2 chars or
+`none`), `showReset true|false`, `showCtxDetail true|false`, `labels
+ctx=context,5h=5-hour` (merges; empty value hides a label) — described in
+Step 1's `overrideHelp`, with the combined result in `effective`.
+`reset [key]` clears a setting (or all of them).
 
 ## Step 5 — Confirm
 

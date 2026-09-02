@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "cc-usage-monitor",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Show 5-hour and 7-day Claude Code rate-limit usage in the statusline and after every task.",
   "author": {
     "name": "harveyxiacn",

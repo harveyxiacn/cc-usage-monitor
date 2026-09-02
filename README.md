@@ -6,7 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node ≥18](https://img.shields.io/badge/node-%E2%89%A518-43853d.svg)](package.json)
-[![Tests](https://img.shields.io/badge/tests-165%20passing-brightgreen.svg)](#tests)
+[![Tests](https://img.shields.io/badge/tests-205%20passing-brightgreen.svg)](#tests)
 
 ---
 
@@ -119,7 +119,9 @@ of a deep work session, this plugin is for you.
 - **10 styles** — `classic`, `minimal`, `compact`, `detailed`, `bracket`,
   `ascii`, `dots`, `badge`, `emoji`, `mono` — one setting restyles both the
   statusline and the Stop-hook box. Preview them side by side and switch
-  with `/cc-usage-monitor:style`, or set `CC_USAGE_MONITOR_STYLE`.
+  with `/cc-usage-monitor:style`, or set `CC_USAGE_MONITOR_STYLE`. Seven
+  overrides (separator, bar widths, brackets, countdown, context detail,
+  labels) fine-tune any preset.
 - **5 bar styles** — `block` (default), `shade`, `square`, `thin`, `ascii` via `CC_USAGE_MONITOR_BAR_STYLE`; composes with any style.
 - **Quietable** — set `CC_USAGE_MONITOR_QUIET=1` to silence the post-task box.
 - **One-step updates** — `/cc-usage-monitor:update` pulls the latest from GitHub.
@@ -325,6 +327,40 @@ top of whichever style is active (except on `minimal`, which has no bars, and `a
 An unknown style name renders as `classic` rather than blanking the
 statusline; `set style` rejects it with the list of valid names.
 
+### Fine-tuning a style (overrides)
+
+A preset gets you most of the way; seven knobs let you adjust it without
+building a look from scratch. Each is a config-file key **and** an
+environment variable, layered on top of whichever style is active (env
+wins, as everywhere else):
+
+| Config key | Environment variable | Accepts | What it changes |
+| --- | --- | --- | --- |
+| `sep` | `CC_USAGE_MONITOR_SEP` | 1–3 characters, e.g. `·`, `»`, `\|` | Separator between statusline segments |
+| `barWidth` | `CC_USAGE_MONITOR_BAR_WIDTH` | 1–20 | Bar cells in the statusline |
+| `boxBarWidth` | `CC_USAGE_MONITOR_BOX_BAR_WIDTH` | 1–40 | Bar cells in the Stop-hook box |
+| `brackets` | `CC_USAGE_MONITOR_BRACKETS` | two characters (`[]`, `()`, `<>`, `{}`) or `none` | Wrap every bar, or strip a preset's brackets |
+| `showReset` | `CC_USAGE_MONITOR_SHOW_RESET` | `true` / `false` | The `(2h 13m)` reset countdown |
+| `showCtxDetail` | `CC_USAGE_MONITOR_CTX_DETAIL` | `true` / `false` | The `(320k/1.0M)` context suffix |
+| `labels` | `CC_USAGE_MONITOR_LABELS` | `ctx=context,5h=5-hour,7d=7-day,cache=cache` (also `turn`, `session`, `cost`, `model`; an empty value hides the label) | Statusline label text |
+
+```bash
+node ~/.claude/plugins/cc-usage-monitor/bin/config.js set style dots
+node ~/.claude/plugins/cc-usage-monitor/bin/config.js set brackets "<>"
+node ~/.claude/plugins/cc-usage-monitor/bin/config.js set barWidth 8
+node ~/.claude/plugins/cc-usage-monitor/bin/config.js set labels ctx=context,5h=5-hour
+node ~/.claude/plugins/cc-usage-monitor/bin/config.js set showReset false
+node ~/.claude/plugins/cc-usage-monitor/bin/config.js preview        # every preset, with your overrides applied
+node ~/.claude/plugins/cc-usage-monitor/bin/config.js get            # "effective" shows the combined result
+node ~/.claude/plugins/cc-usage-monitor/bin/config.js reset labels   # drop one override; `reset` alone clears everything
+```
+
+`/cc-usage-monitor:style` walks you through the same knobs after you pick a
+preset. Overrides apply to every preset — `minimal` stays bar-less, and
+`ascii` keeps its 7-bit bar glyphs — and an invalid value is ignored at
+render time rather than breaking the statusline (`set` rejects it with a
+message).
+
 ### Choosing a bar style
 
 Set `CC_USAGE_MONITOR_BAR_STYLE` to one of the values below.
@@ -374,6 +410,7 @@ Or inline in `settings.json` if you want to scope it to Claude Code only:
 | Environment variable | Effect |
 | --- | --- |
 | `CC_USAGE_MONITOR_STYLE=name`   | Pick one of the 10 [style presets](#choosing-a-style-10-presets). Unknown names render as `classic`. |
+| `CC_USAGE_MONITOR_SEP`, `_BAR_WIDTH`, `_BOX_BAR_WIDTH`, `_BRACKETS`, `_SHOW_RESET`, `_CTX_DETAIL`, `_LABELS` | Style [overrides](#fine-tuning-a-style-overrides), layered on the active preset. |
 | `CC_USAGE_MONITOR_QUIET=1`      | Silences the post-task box. Statusline still updates. |
 | `CC_USAGE_MONITOR_NO_SESSION=1` | Skip the transcript walk in the statusline (drops the `Σ` segment). The Stop-hook Session row is unaffected. |
 | `CC_USAGE_MONITOR_TWO_LINE=1`   | Force the statusline to wrap to two lines. |
@@ -385,8 +422,8 @@ Or inline in `settings.json` if you want to scope it to Claude Code only:
 
 All of these except the color toggles and the config path can also be set
 persistently via `/cc-usage-monitor:config` or `/cc-usage-monitor:style`
-(config-file keys: `show`, `style`, `barStyle`, `twoLine`, `width`, `quiet`,
-`noSession`). Precedence:
+(config-file keys: `show`, `style`, `barStyle`, the seven override keys,
+`twoLine`, `width`, `quiet`, `noSession`). Precedence:
 environment variable → config file → built-in default.
 
 ## How it works
@@ -412,7 +449,7 @@ See [`docs/DESIGN.md`](docs/DESIGN.md) for the full architecture.
 npm test
 ```
 
-Runs **165 tests** covering:
+Runs **205 tests** covering:
 
 - formatter unit tests (bar rendering, time-until, cost formatting, token
   abbreviation, cache-hit math, color thresholds)
@@ -424,7 +461,8 @@ Runs **165 tests** covering:
   Fable 5.1 + Sonnet 5 transcript priced at the new rates on both surfaces)
 - transcript walker unit tests (dedup-by-message-id, per-model bucketing,
   missing path, empty file, non-assistant entries)
-- style preset tests (all ten resolve, env-over-config precedence,
+- style preset and override tests (all ten resolve, env-over-config precedence,
+  the seven fine-tuning overrides parsed, validated, bridged and rendered,
   `barStyle` override rules, `classic` unchanged, `ascii` pure 7-bit on both
   surfaces, `mono` color-free, `badge` background codes, rectangular boxes,
   `preview` / `set style` CLI)

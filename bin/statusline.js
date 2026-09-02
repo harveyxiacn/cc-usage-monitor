@@ -33,6 +33,14 @@
  *                                   160 — whichever is found first.
  *   CC_USAGE_MONITOR_TWO_LINE=1     always wrap, regardless of width.
  *   NO_COLOR=1 / FORCE_COLOR=0      disable colors
+ *
+ * Fine-tuning on top of the chosen style (invalid values are ignored):
+ *   CC_USAGE_MONITOR_SEP=»          separator glyph, 1-3 characters
+ *   CC_USAGE_MONITOR_BAR_WIDTH=8    inline bar cells, 1-20
+ *   CC_USAGE_MONITOR_BRACKETS=()    wrap every bar (2 chars), or `none`
+ *   CC_USAGE_MONITOR_SHOW_RESET=0   hide the reset countdown
+ *   CC_USAGE_MONITOR_CTX_DETAIL=0   hide the (used/total) context suffix
+ *   CC_USAGE_MONITOR_LABELS=ctx=context,5h=5-hour   rename labels
  *   CC_USAGE_MONITOR_DEBUG=1        print errors to stderr instead of failing
  *                                   silently (developer aid)
  *

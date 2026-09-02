@@ -424,3 +424,148 @@ test('statusline style badge: session pill keeps a visible delimiter between tok
   assert.equal(code, 0);
   assert.match(stdout, /Σ↑892 ↓250 · \+156\/-23 · cache/);
 });
+
+// --- fine-tuning overrides -----------------------------------------------
+//
+// The knobs a user reaches for after picking a preset. Each one is asserted
+// against the pixels, not the theme object — the point is that the override
+// survives the whole way to the rendered line.
+
+test('override sep: a custom separator replaces the preset one', async () => {
+  const { stdout, code } = await runScript(STATUSLINE, 'fable.json', { CC_USAGE_MONITOR_SEP: '»' });
+  assert.equal(code, 0);
+  assert.match(stdout, / » ctx /);
+  assert.doesNotMatch(stdout, /│/);
+});
+
+test('override barWidth: 8 cells in every inline bar', async () => {
+  const { stdout, code } = await runScript(STATUSLINE, 'fable.json', { CC_USAGE_MONITOR_BAR_WIDTH: '8' });
+  assert.equal(code, 0);
+  assert.match(stdout, /ctx ▰▰▰▱▱▱▱▱ 32%/);
+  assert.match(stdout, /5h [▰▱]{8} 18%/);
+  assert.doesNotMatch(stdout, /[▰▱]{9}/);
+});
+
+test('override brackets: () wraps every bar, none unwraps the bracket preset', async () => {
+  const wrapped = await runScript(STATUSLINE, 'fable.json', { CC_USAGE_MONITOR_BRACKETS: '()' });
+  assert.equal(wrapped.code, 0);
+  assert.match(wrapped.stdout, /ctx \(▰▰▱▱▱\) 32%/);
+  assert.match(wrapped.stdout, /5h \([▰▱]{5}\) 18%/);
+
+  const bare = await runScript(STATUSLINE, 'fable.json', {
+    CC_USAGE_MONITOR_STYLE: 'bracket',
+    CC_USAGE_MONITOR_BRACKETS: 'none',
+  });
+  assert.equal(bare.code, 0);
+  assert.match(bare.stdout, /ctx ▰▰▱▱▱ 32%/);
+  assert.doesNotMatch(bare.stdout, /\[▰/);
+});
+
+test('override labels: renamed labels appear, the untouched ones stay', async () => {
+  const { stdout, code } = await runScript(STATUSLINE, 'fable.json', {
+    CC_USAGE_MONITOR_LABELS: 'ctx=context,5h=5-hour',
+  });
+  assert.equal(code, 0);
+  assert.match(stdout, /context ▰▰▱▱▱ 32%/);
+  assert.match(stdout, /5-hour ▰▱▱▱▱ 18%/);
+  assert.match(stdout, /7d ▰▰▱▱▱ 36%/); // not renamed -> preset label kept
+  assert.doesNotMatch(stdout, /ctx /);
+});
+
+test('override labels: an empty value hides that label without leaving a gap', async () => {
+  const { stdout, code } = await runScript(STATUSLINE, 'fable.json', {
+    CC_USAGE_MONITOR_LABELS: 'ctx=',
+  });
+  assert.equal(code, 0);
+  assert.match(stdout, /│ ▰▰▱▱▱ 32%/);
+  assert.doesNotMatch(stdout, /ctx/);
+});
+
+test('override showReset=0 hides the countdown and nothing else', async () => {
+  const { stdout, code } = await runScript(STATUSLINE, 'full.json', { CC_USAGE_MONITOR_SHOW_RESET: '0' });
+  assert.equal(code, 0);
+  assert.doesNotMatch(stdout, /\(\d+d \d+h\)/);
+  assert.match(stdout, /5h ▰▱▱▱▱ 24%/);
+  assert.match(stdout, /\(16k\/200k\)/); // the context suffix is a separate knob
+});
+
+test('override CTX_DETAIL=0 hides the (used/total) suffix and nothing else', async () => {
+  const { stdout, code } = await runScript(STATUSLINE, 'full.json', { CC_USAGE_MONITOR_CTX_DETAIL: '0' });
+  assert.equal(code, 0);
+  assert.doesNotMatch(stdout, /\(16k\/200k\)/);
+  assert.match(stdout, /ctx ▰▱▱▱▱ 12%/);
+  assert.match(stdout, /\(\d+d \d+h\)/); // the reset countdown is still there
+});
+
+test('override: minimal turns both suffixes back on when asked', async () => {
+  const { stdout, code } = await runScript(STATUSLINE, 'full.json', {
+    CC_USAGE_MONITOR_STYLE: 'minimal',
+    CC_USAGE_MONITOR_SHOW_RESET: '1',
+    CC_USAGE_MONITOR_CTX_DETAIL: 'true',
+  });
+  assert.equal(code, 0);
+  assert.match(stdout, /ctx 12% \(16k\/200k\)/);
+  assert.match(stdout, /\(\d+d \d+h\)/);
+  assert.doesNotMatch(stdout, /▰/); // still bar-less: overrides don't revive bars
+});
+
+test('override: bar geometry is a silent no-op on minimal', async () => {
+  const { stdout, code } = await runScript(STATUSLINE, 'fable.json', {
+    CC_USAGE_MONITOR_STYLE: 'minimal',
+    CC_USAGE_MONITOR_BAR_WIDTH: '8',
+    CC_USAGE_MONITOR_BRACKETS: '()',
+  });
+  assert.equal(code, 0);
+  assert.match(stdout, /ctx 32%/);
+  assert.doesNotMatch(stdout, /[▰▱]/);
+  assert.doesNotMatch(stdout, /\(\)/);
+});
+
+test('override: knobs compose on top of a non-classic preset', async () => {
+  const { stdout, code } = await runScript(STATUSLINE, 'fable.json', {
+    CC_USAGE_MONITOR_STYLE: 'dots',
+    CC_USAGE_MONITOR_BRACKETS: '<>',
+    CC_USAGE_MONITOR_SEP: '»',
+    CC_USAGE_MONITOR_LABELS: 'ctx=context',
+  });
+  assert.equal(code, 0);
+  assert.match(stdout, /context <●●○○○> 32%/); // preset glyphs + overridden wrapping
+  assert.match(stdout, / » /);
+  assert.doesNotMatch(stdout, /•/); // the preset separator is gone
+});
+
+test('override: ascii keeps its 7-bit bars under barStyle while sep applies', async () => {
+  const { stdout, code } = await runScript(STATUSLINE, 'fable.json', {
+    CC_USAGE_MONITOR_STYLE: 'ascii',
+    CC_USAGE_MONITOR_BAR_STYLE: 'square',
+    CC_USAGE_MONITOR_SEP: '::',
+  });
+  assert.equal(code, 0);
+  assert.match(stdout, /ctx \[##---\] 32%/);
+  assert.match(stdout, / :: ctx /);
+  assert.doesNotMatch(stdout, /■/);
+});
+
+test('override: classic with no overrides set is byte-identical to plain classic', async () => {
+  const plain = await runScript(STATUSLINE, 'fable.json');
+  const empty = await runScript(STATUSLINE, 'fable.json', {
+    CC_USAGE_MONITOR_SEP: '',
+    CC_USAGE_MONITOR_BAR_WIDTH: '',
+    CC_USAGE_MONITOR_BOX_BAR_WIDTH: '',
+    CC_USAGE_MONITOR_BRACKETS: '',
+    CC_USAGE_MONITOR_SHOW_RESET: '',
+    CC_USAGE_MONITOR_CTX_DETAIL: '',
+    CC_USAGE_MONITOR_LABELS: '',
+  });
+  assert.equal(empty.code, 0);
+  assert.equal(empty.stdout, plain.stdout);
+
+  // Junk values are ignored just as completely.
+  const junk = await runScript(STATUSLINE, 'fable.json', {
+    CC_USAGE_MONITOR_SEP: 'wayTooLong',
+    CC_USAGE_MONITOR_BAR_WIDTH: '99',
+    CC_USAGE_MONITOR_BRACKETS: '[[[',
+    CC_USAGE_MONITOR_LABELS: 'bogus=x',
+  });
+  assert.equal(junk.stdout, plain.stdout);
+});

@@ -13,8 +13,18 @@
  *   node bin/config.js reset [key]
  *   node bin/config.js preview [style]
  *
- * `get` prints JSON: current saved config, the config file path, and the
- * valid values, so an agent can render a checklist without guessing.
+ * Fine-tuning on top of the chosen style (see lib/theme.js):
+ *   node bin/config.js set sep »
+ *   node bin/config.js set barWidth 8 | set boxBarWidth 16
+ *   node bin/config.js set brackets [] | set brackets none
+ *   node bin/config.js set showReset false | set showCtxDetail false
+ *   node bin/config.js set labels ctx=context,5h=5-hour   (merges; `ctx=`
+ *                                                          blanks a label)
+ *
+ * `get` prints JSON: current saved config, the config file path, the valid
+ * values, and `effective` — the theme that would actually render right now,
+ * env vars and overrides included — so an agent can render a checklist
+ * without guessing.
  * `preview` renders a sample statusline in every style so the user can pick
  * one by eye instead of by name.
  * Exits non-zero with a message on stderr for invalid input.
@@ -27,11 +37,40 @@ const {
   VALID_COMPONENTS,
   VALID_BAR_STYLES,
   VALID_STYLES,
+  OVERRIDE_KEYS,
   configPath,
   loadConfig,
   saveConfig,
+  applyConfigToEnv,
 } = require('../lib/config');
-const { themeHelp, SAMPLE_PAYLOAD } = require('../lib/theme');
+const {
+  themeHelp,
+  resolveTheme,
+  SAMPLE_PAYLOAD,
+  LABEL_KEYS,
+  MAX_BAR_WIDTH,
+  MAX_BOX_BAR_WIDTH,
+  NO_BRACKETS,
+  parseSepOverride,
+  parseWidthOverride,
+  parseBracketsOverride,
+} = require('../lib/theme');
+
+/** Every key `set` accepts, in the order the help text lists them. */
+const SETTABLE_KEYS = [
+  'show', 'style', 'barStyle', 'twoLine', 'width', 'quiet', 'noSession',
+  ...OVERRIDE_KEYS,
+];
+
+const OVERRIDE_HELP = {
+  sep: 'Separator between statusline segments — 1-3 characters (e.g. » or ::)',
+  barWidth: `Statusline bar cells — an integer from 1 to ${MAX_BAR_WIDTH}`,
+  boxBarWidth: `Stop-hook box bar cells — an integer from 1 to ${MAX_BOX_BAR_WIDTH}`,
+  brackets: 'Wrap every bar — exactly 2 characters ([], (), <>, {}, 「」) or "none"',
+  showReset: 'Show the rate-limit reset countdown in the statusline — true|false',
+  showCtxDetail: 'Show the (used/total) suffix after the context bar — true|false',
+  labels: `Rename statusline labels — key=value,… over ${LABEL_KEYS.join(', ')} (empty value hides one)`,
+};
 
 const COMPONENT_HELP = {
   model: 'Model name (e.g. "Fable 5.1")',
@@ -49,6 +88,13 @@ function fail(msg) {
   process.exit(1);
 }
 
+// `node bin/config.js preview | head -3` closes stdout early; that's a
+// normal way to peek, not an error worth a stack trace.
+process.stdout.on('error', (err) => {
+  if (err && err.code === 'EPIPE') process.exit(0);
+  throw err;
+});
+
 /**
  * The style that would actually render right now: env var, then the config
  * file, then the default. An unrecognised name reports as `classic` because
@@ -59,6 +105,29 @@ function currentStyle() {
   const raw = process.env.CC_USAGE_MONITOR_STYLE || loadConfig().style || 'classic';
   const name = String(raw).trim().toLowerCase();
   return VALID_STYLES.includes(name) ? name : 'classic';
+}
+
+/**
+ * The theme that would actually render on the next turn: the config file
+ * bridged into a copy of the environment, then resolved exactly the way the
+ * two bins resolve it. Reporting the combined result means the slash
+ * command never has to re-derive "preset + overrides" for itself.
+ */
+function effective() {
+  const env = { ...process.env };
+  applyConfigToEnv(env);
+  const theme = resolveTheme(env);
+  return {
+    style: theme.name,
+    sep: theme.sep,
+    barWidth: theme.barWidth,
+    boxBarWidth: theme.boxBarWidth,
+    // Reported the way `set brackets` accepts it, not as the internal pair.
+    brackets: theme.brackets ? theme.brackets.join('') : NO_BRACKETS,
+    showReset: theme.showReset,
+    showCtxDetail: theme.showCtxDetail,
+    labels: theme.labels,
+  };
 }
 
 function get() {
@@ -72,8 +141,11 @@ function get() {
     validStyles: VALID_STYLES,
     styleHelp: themeHelp(),
     currentStyle: currentStyle(),
-    booleanKeys: ['twoLine', 'quiet', 'noSession'],
-    numberKeys: ['width'],
+    overrideKeys: OVERRIDE_KEYS,
+    overrideHelp: OVERRIDE_HELP,
+    effective: effective(),
+    booleanKeys: ['twoLine', 'quiet', 'noSession', 'showReset', 'showCtxDetail'],
+    numberKeys: ['width', 'barWidth', 'boxBarWidth'],
     note: 'Environment variables (CC_USAGE_MONITOR_*) override this file.',
   }, null, 2) + '\n');
 }
@@ -129,6 +201,40 @@ function parseBool(value, key) {
   fail(`${key} must be true or false, got "${value}"`);
 }
 
+/** A bar width from the command line — loud where lib/theme is silent. */
+function requireWidth(value, key, max) {
+  const n = parseWidthOverride(value, max);
+  if (n === null) fail(`${key} must be an integer between 1 and ${max}, got "${value}"`);
+  return n;
+}
+
+/**
+ * `ctx=context,5h=5-hour` -> { ctx: 'context', '5h': '5-hour' }.
+ *
+ * Unlike the env-var parser this one *rejects* bad input rather than
+ * skipping it: a mistyped key on the command line is worth an error, not a
+ * silently missing rename. An empty value is legal — it hides that label.
+ */
+function parseLabelArgs(value) {
+  const pairs = value.split(',').map((s) => s.trim()).filter(Boolean);
+  if (!pairs.length) {
+    fail(`labels needs at least one key=value pair. Valid keys: ${LABEL_KEYS.join(', ')}`);
+  }
+  const out = {};
+  for (const pair of pairs) {
+    const eq = pair.indexOf('=');
+    if (eq === -1) {
+      fail(`labels needs key=value pairs, got "${pair}". Valid keys: ${LABEL_KEYS.join(', ')}`);
+    }
+    const name = pair.slice(0, eq).trim();
+    if (!LABEL_KEYS.includes(name)) {
+      fail(`unknown label "${name}". Valid: ${LABEL_KEYS.join(', ')}`);
+    }
+    out[name] = pair.slice(eq + 1).trim();
+  }
+  return out;
+}
+
 function set(key, value) {
   if (!key || value == null) fail('usage: config.js set <key> <value>');
   const cfg = loadConfig();
@@ -156,6 +262,8 @@ function set(key, value) {
     case 'twoLine':
     case 'quiet':
     case 'noSession':
+    case 'showReset':
+    case 'showCtxDetail':
       cfg[key] = parseBool(value, key);
       break;
     case 'width': {
@@ -164,8 +272,35 @@ function set(key, value) {
       cfg.width = n;
       break;
     }
+    case 'sep': {
+      const sep = parseSepOverride(value);
+      if (sep === null) {
+        fail(`sep must be 1-3 characters and not blank, got "${value}"`);
+      }
+      cfg.sep = sep;
+      break;
+    }
+    case 'barWidth':
+      cfg.barWidth = requireWidth(value, key, MAX_BAR_WIDTH);
+      break;
+    case 'boxBarWidth':
+      cfg.boxBarWidth = requireWidth(value, key, MAX_BOX_BAR_WIDTH);
+      break;
+    case 'brackets': {
+      const brackets = parseBracketsOverride(value);
+      if (brackets === null) {
+        fail(`brackets must be exactly 2 characters (e.g. [] () <> {} 「」) or "none", got "${value}"`);
+      }
+      cfg.brackets = brackets === NO_BRACKETS ? NO_BRACKETS : brackets.join('');
+      break;
+    }
+    case 'labels':
+      // Merged, not replaced: renaming `ctx` today must not undo the `5h`
+      // renamed yesterday. `reset labels` is how you clear the whole set.
+      cfg.labels = { ...(cfg.labels || {}), ...parseLabelArgs(value) };
+      break;
     default:
-      fail(`unknown key "${key}". Valid: show, style, barStyle, twoLine, width, quiet, noSession`);
+      fail(`unknown key "${key}". Valid: ${SETTABLE_KEYS.join(', ')}`);
   }
   const file = saveConfig(cfg);
   process.stdout.write(`saved ${key} to ${file}\n`);

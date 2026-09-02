@@ -6,8 +6,8 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 
-const { loadConfig, saveConfig, applyConfigToEnv, configPath, VALID_STYLES } = require('../lib/config');
-const { THEME_NAMES } = require('../lib/theme');
+const { loadConfig, saveConfig, applyConfigToEnv, configPath, VALID_STYLES, OVERRIDE_KEYS } = require('../lib/config');
+const { THEME_NAMES, LABEL_KEYS } = require('../lib/theme');
 const { runScript, STATUSLINE, ON_STOP } = require('./helpers');
 
 function withTempConfig(content, fn) {
@@ -309,4 +309,305 @@ test('config CLI: preview accepts one style and rejects unknown ones', async () 
     assert.equal(bad.code, 1);
     assert.match(bad.stderr, /unknown style "nope"/);
   });
+});
+
+// --- fine-tuning overrides -----------------------------------------------
+
+test('config: OVERRIDE_KEYS is the documented set, in a fixed order', () => {
+  assert.deepEqual(OVERRIDE_KEYS, [
+    'sep', 'barWidth', 'boxBarWidth', 'brackets', 'showReset', 'showCtxDetail', 'labels',
+  ]);
+});
+
+test('config: loadConfig keeps every valid override', () => {
+  withTempConfig(JSON.stringify({
+    sep: '»',
+    barWidth: 8,
+    boxBarWidth: 16,
+    brackets: '()',
+    showReset: false,
+    showCtxDetail: true,
+    labels: { ctx: 'context', '5h': '5-hour', cache: '' },
+  }), () => {
+    const cfg = loadConfig();
+    assert.equal(cfg.sep, '»');
+    assert.equal(cfg.barWidth, 8);
+    assert.equal(cfg.boxBarWidth, 16);
+    assert.equal(cfg.brackets, '()');
+    assert.equal(cfg.showReset, false);   // a meaningful false, not "missing"
+    assert.equal(cfg.showCtxDetail, true);
+    assert.deepEqual(cfg.labels, { ctx: 'context', '5h': '5-hour', cache: '' });
+  });
+  // `none` is a legal brackets value and round-trips as itself.
+  withTempConfig(JSON.stringify({ brackets: 'none' }), () => {
+    assert.equal(loadConfig().brackets, 'none');
+  });
+});
+
+test('config: loadConfig drops every invalid override', () => {
+  withTempConfig(JSON.stringify({
+    sep: '    ',          // blank
+    barWidth: 0,          // below the range
+    boxBarWidth: 99,      // above the range
+    brackets: '[[]]',     // not two characters
+    showReset: 'yes',     // not a boolean
+    showCtxDetail: 1,     // not a boolean
+    labels: 'ctx=context', // not an object
+  }), () => {
+    assert.deepEqual(loadConfig(), {});
+  });
+  // Non-integer widths and non-string separators go too.
+  withTempConfig(JSON.stringify({ barWidth: 4.5, boxBarWidth: '16', sep: 5 }), () => {
+    assert.deepEqual(loadConfig(), {});
+  });
+});
+
+test('config: loadConfig filters labels to known keys with string values', () => {
+  withTempConfig(JSON.stringify({
+    labels: { ctx: 'context', bogus: 'x', '5h': 42, cache: '', cost: 'a,b' },
+  }), () => {
+    // Unknown key, non-string value, and a value carrying the separator the
+    // env encoding uses are all dropped; the rest survive.
+    assert.deepEqual(loadConfig().labels, { ctx: 'context', cache: '' });
+  });
+  withTempConfig(JSON.stringify({ labels: { bogus: 'x' } }), () => {
+    assert.equal(loadConfig().labels, undefined); // nothing usable -> absent
+  });
+  withTempConfig(JSON.stringify({ labels: ['ctx', 'context'] }), () => {
+    assert.equal(loadConfig().labels, undefined); // an array is not a label map
+  });
+});
+
+test('config: applyConfigToEnv bridges every override, and env still wins', () => {
+  withTempConfig(JSON.stringify({
+    sep: '»',
+    barWidth: 8,
+    boxBarWidth: 16,
+    brackets: 'none',
+    showReset: false,
+    showCtxDetail: false,
+    labels: { ctx: 'context', cache: '' },
+  }), () => {
+    const fromFile = {};
+    applyConfigToEnv(fromFile);
+    assert.equal(fromFile.CC_USAGE_MONITOR_SEP, '»');
+    assert.equal(fromFile.CC_USAGE_MONITOR_BAR_WIDTH, '8');
+    assert.equal(fromFile.CC_USAGE_MONITOR_BOX_BAR_WIDTH, '16');
+    assert.equal(fromFile.CC_USAGE_MONITOR_BRACKETS, 'none');
+    assert.equal(fromFile.CC_USAGE_MONITOR_SHOW_RESET, '0');
+    assert.equal(fromFile.CC_USAGE_MONITOR_CTX_DETAIL, '0');
+    assert.equal(fromFile.CC_USAGE_MONITOR_LABELS, 'ctx=context,cache=');
+
+    const fromEnv = {
+      CC_USAGE_MONITOR_SEP: '|',
+      CC_USAGE_MONITOR_BAR_WIDTH: '3',
+      CC_USAGE_MONITOR_BOX_BAR_WIDTH: '4',
+      CC_USAGE_MONITOR_BRACKETS: '<>',
+      CC_USAGE_MONITOR_SHOW_RESET: '1',
+      CC_USAGE_MONITOR_CTX_DETAIL: '1',
+      CC_USAGE_MONITOR_LABELS: 'ctx=CTX',
+    };
+    applyConfigToEnv(fromEnv);
+    assert.deepEqual(fromEnv, {
+      CC_USAGE_MONITOR_SEP: '|',
+      CC_USAGE_MONITOR_BAR_WIDTH: '3',
+      CC_USAGE_MONITOR_BOX_BAR_WIDTH: '4',
+      CC_USAGE_MONITOR_BRACKETS: '<>',
+      CC_USAGE_MONITOR_SHOW_RESET: '1',
+      CC_USAGE_MONITOR_CTX_DETAIL: '1',
+      CC_USAGE_MONITOR_LABELS: 'ctx=CTX',
+    });
+  });
+});
+
+test('config: a showReset of true is bridged as 1, and an empty labels map not at all', () => {
+  withTempConfig(JSON.stringify({ showReset: true, showCtxDetail: true, labels: {} }), () => {
+    const env = {};
+    applyConfigToEnv(env);
+    assert.equal(env.CC_USAGE_MONITOR_SHOW_RESET, '1');
+    assert.equal(env.CC_USAGE_MONITOR_CTX_DETAIL, '1');
+    assert.equal(env.CC_USAGE_MONITOR_LABELS, undefined);
+  });
+});
+
+test('config CLI: set and reset each override key', async () => {
+  await withTempFile(async (tmp) => {
+    const read = () => JSON.parse(fs.readFileSync(tmp, 'utf8'));
+
+    for (const [key, value, expected] of [
+      ['sep', '»', '»'],
+      ['barWidth', '8', 8],
+      ['boxBarWidth', '16', 16],
+      ['brackets', '()', '()'],
+      ['showReset', 'false', false],
+      ['showCtxDetail', '0', false],
+    ]) {
+      const res = await runCli(['set', key, value], tmp);
+      assert.equal(res.code, 0, `${key}: ${res.stderr}`);
+      assert.match(res.stdout, new RegExp(`saved ${key}`));
+      assert.deepEqual(read()[key], expected, key);
+    }
+    // `none` is stored verbatim so the file says what the user typed.
+    assert.equal((await runCli(['set', 'brackets', 'none'], tmp)).code, 0);
+    assert.equal(read().brackets, 'none');
+
+    for (const key of OVERRIDE_KEYS.filter((k) => k !== 'labels')) {
+      const res = await runCli(['reset', key], tmp);
+      assert.equal(res.code, 0, key);
+      assert.equal(read()[key], undefined, key);
+    }
+  });
+});
+
+test('config CLI: set labels merges, blanks one label, and reset clears them all', async () => {
+  await withTempFile(async (tmp) => {
+    const read = () => JSON.parse(fs.readFileSync(tmp, 'utf8'));
+
+    assert.equal((await runCli(['set', 'labels', 'ctx=context,5h=5-hour'], tmp)).code, 0);
+    assert.deepEqual(read().labels, { ctx: 'context', '5h': '5-hour' });
+
+    // A second `set` merges into the saved object instead of replacing it.
+    assert.equal((await runCli(['set', 'labels', '7d=7-day'], tmp)).code, 0);
+    assert.deepEqual(read().labels, { ctx: 'context', '5h': '5-hour', '7d': '7-day' });
+
+    // An empty value blanks that one label (it hides it at render time).
+    assert.equal((await runCli(['set', 'labels', 'ctx='], tmp)).code, 0);
+    assert.deepEqual(read().labels, { ctx: '', '5h': '5-hour', '7d': '7-day' });
+
+    // reset drops the whole object, not one entry.
+    assert.equal((await runCli(['reset', 'labels'], tmp)).code, 0);
+    assert.equal(read().labels, undefined);
+  });
+});
+
+test('config CLI: every override rejects bad input with the accepted values', async () => {
+  await withTempFile(async (tmp) => {
+    fs.writeFileSync(tmp, JSON.stringify({ sep: '»', barWidth: 8 }));
+
+    const cases = [
+      [['set', 'sep', '   '], /sep must be 1-3 characters/],
+      [['set', 'barWidth', '99'], /barWidth must be an integer between 1 and 20/],
+      [['set', 'barWidth', 'wide'], /barWidth must be an integer between 1 and 20/],
+      [['set', 'boxBarWidth', '0'], /boxBarWidth must be an integer between 1 and 40/],
+      [['set', 'brackets', '[[]]'], /brackets must be exactly 2 characters/],
+      [['set', 'showReset', 'maybe'], /showReset must be true or false/],
+      [['set', 'showCtxDetail', 'maybe'], /showCtxDetail must be true or false/],
+      [['set', 'labels', 'bogus=x'], /unknown label "bogus"/],
+      [['set', 'labels', 'nonsense'], /labels needs key=value pairs/],
+    ];
+    for (const [args, pattern] of cases) {
+      const res = await runCli(args, tmp);
+      assert.equal(res.code, 1, args.join(' '));
+      assert.match(res.stderr, pattern, args.join(' '));
+    }
+    // Nothing invalid was written along the way.
+    assert.deepEqual(JSON.parse(fs.readFileSync(tmp, 'utf8')), { sep: '»', barWidth: 8 });
+
+    // The unknown-key message lists the overrides too.
+    const unknown = await runCli(['set', 'nonsense', '1'], tmp);
+    assert.equal(unknown.code, 1);
+    for (const key of OVERRIDE_KEYS) {
+      assert.ok(unknown.stderr.includes(key), `error should list ${key}: ${unknown.stderr}`);
+    }
+  });
+});
+
+test('config CLI: get exposes overrideKeys, overrideHelp and the effective theme', async () => {
+  await withTempFile(async (tmp) => {
+    const clean = JSON.parse((await runCli(['get'], tmp)).stdout);
+    assert.deepEqual(clean.overrideKeys, OVERRIDE_KEYS);
+    assert.deepEqual(Object.keys(clean.overrideHelp), OVERRIDE_KEYS);
+    for (const key of OVERRIDE_KEYS) {
+      assert.equal(typeof clean.overrideHelp[key], 'string', key);
+      assert.ok(clean.overrideHelp[key].length > 0, key);
+    }
+    // With nothing saved, `effective` is plain classic.
+    assert.deepEqual(clean.effective, {
+      style: 'classic',
+      sep: '│',
+      barWidth: 5,
+      boxBarWidth: 12,
+      brackets: 'none',
+      showReset: true,
+      showCtxDetail: true,
+      labels: { ctx: 'ctx', '5h': '5h', '7d': '7d', cache: 'cache', turn: '', session: '', cost: '', model: '' },
+    });
+
+    // Preset + overrides, combined the way the renderers will combine them.
+    fs.writeFileSync(tmp, JSON.stringify({
+      style: 'dots', sep: '»', barWidth: 8, brackets: '<>', showReset: false,
+      labels: { ctx: 'context' },
+    }));
+    const saved = JSON.parse((await runCli(['get'], tmp)).stdout).effective;
+    assert.equal(saved.style, 'dots');
+    assert.equal(saved.sep, '»');
+    assert.equal(saved.barWidth, 8);
+    assert.equal(saved.brackets, '<>');
+    assert.equal(saved.showReset, false);
+    assert.equal(saved.labels.ctx, 'context');
+    assert.equal(saved.labels['5h'], '5h'); // untouched by the merge
+    assert.deepEqual(Object.keys(saved.labels), LABEL_KEYS);
+
+    // An env var still wins over the file, and `effective` says so.
+    const overridden = JSON.parse(
+      (await runCli(['get'], tmp, { CC_USAGE_MONITOR_SEP: '::', CC_USAGE_MONITOR_BRACKETS: 'none' })).stdout
+    ).effective;
+    assert.equal(overridden.sep, '::');
+    assert.equal(overridden.brackets, 'none');
+  });
+});
+
+test('config CLI: preview renders the saved overrides on every preset', async () => {
+  await withTempFile(async (tmp) => {
+    fs.writeFileSync(tmp, JSON.stringify({ sep: '»', brackets: '<>' }));
+    const { stdout, code } = await runCli(['preview'], tmp);
+    assert.equal(code, 0);
+    const lines = stdout.replace(/\n$/, '').split('\n');
+    assert.equal(lines.length, 10);
+    for (const line of lines) {
+      const name = line.slice(0, 9).trim();
+      // `badge` draws pills instead of a separator, and colors are off here.
+      if (name !== 'badge') assert.ok(line.includes('»'), `no separator override in: ${line}`);
+      // minimal has no bars to wrap; everything else picks up the brackets.
+      if (name !== 'minimal') assert.ok(line.includes('<'), `no bracket override in: ${line}`);
+    }
+  });
+});
+
+test('config: overrides reach the statusline through the config file', async () => {
+  const tmp = path.join(os.tmpdir(), `cc-usage-monitor-cfg-ov-keys-${process.pid}.json`);
+  fs.writeFileSync(tmp, JSON.stringify({
+    sep: '»', barWidth: 8, brackets: '()', showCtxDetail: false, labels: { ctx: 'context' },
+  }));
+  try {
+    const { stdout, code } = await runScript(STATUSLINE, 'fable.json', { CC_USAGE_MONITOR_CONFIG: tmp });
+    assert.equal(code, 0);
+    assert.match(stdout, /context \([▰▱]{8}\) 32%/);
+    assert.match(stdout, /»/);
+    assert.doesNotMatch(stdout, /\(320k\/1\.0M\)/);
+    assert.doesNotMatch(stdout, /│/);
+
+    // …and an env var still overrides the file, one key at a time.
+    const env = await runScript(STATUSLINE, 'fable.json', {
+      CC_USAGE_MONITOR_CONFIG: tmp,
+      CC_USAGE_MONITOR_BRACKETS: 'none',
+    });
+    assert.equal(env.code, 0);
+    assert.match(env.stdout, /context [▰▱]{8} 32%/);
+    assert.doesNotMatch(env.stdout, /\(▰/);
+  } finally {
+    fs.unlinkSync(tmp);
+  }
+});
+
+test('config: overrides reach the Stop-hook box through the config file', async () => {
+  const tmp = path.join(os.tmpdir(), `cc-usage-monitor-cfg-ov-box-${process.pid}.json`);
+  fs.writeFileSync(tmp, JSON.stringify({ boxBarWidth: 16, brackets: '()' }));
+  try {
+    const { stderr, code } = await runScript(ON_STOP, 'full.json', { CC_USAGE_MONITOR_CONFIG: tmp });
+    assert.equal(code, 0);
+    assert.match(stderr, /\([▰▱]{16}\)/);
+  } finally {
+    fs.unlinkSync(tmp);
+  }
 });

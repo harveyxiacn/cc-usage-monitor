@@ -11,7 +11,9 @@
  * Disable by setting CC_USAGE_MONITOR_QUIET=1 (or `quiet: true` in the
  * config file written by /cc-usage-monitor:config — env wins on conflict).
  * The box follows the same style preset as the statusline
- * (CC_USAGE_MONITOR_STYLE / the `style` config key — see lib/theme.js).
+ * (CC_USAGE_MONITOR_STYLE / the `style` config key — see lib/theme.js), and
+ * the same fine-tuning overrides: CC_USAGE_MONITOR_BOX_BAR_WIDTH sizes the
+ * bars in here (1-40) and CC_USAGE_MONITOR_BRACKETS wraps them.
  */
 
 // Must run before any CC_USAGE_MONITOR_* env var is read.

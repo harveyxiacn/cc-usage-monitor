@@ -247,6 +247,76 @@ test('on-stop style badge: pills stay out of the box, colors stay in', async () 
   assertRectangular(stderr);
 });
 
+// --- fine-tuning overrides -----------------------------------------------
+//
+// The box has its own bar width (`boxBarWidth`) but shares `brackets` with
+// the statusline. Both change the length of a row, so every assertion here
+// is paired with the rectangularity check — a frame that no longer closes
+// is the failure mode that matters.
+
+test('on-stop override: BOX_BAR_WIDTH resizes the bars, frame intact', async () => {
+  const { stderr, code } = await runScript(ON_STOP, 'full.json', {
+    CC_USAGE_MONITOR_BOX_BAR_WIDTH: '16',
+  });
+  assert.equal(code, 0);
+  assert.match(stderr, /5h window {2}[▰▱]{16} {2}/);
+  assert.match(stderr, /Context {4}[▰▱]{16} {2}/);
+  assert.doesNotMatch(stderr, /[▰▱]{17}/);
+  assertRectangular(stderr);
+});
+
+test('on-stop override: BOX_BAR_WIDTH is independent of the statusline width', async () => {
+  // Setting only the statusline knob must not touch the box.
+  const { stderr, code } = await runScript(ON_STOP, 'full.json', {
+    CC_USAGE_MONITOR_BAR_WIDTH: '3',
+  });
+  assert.equal(code, 0);
+  assert.match(stderr, /5h window {2}[▰▱]{12} {2}/);
+  assertRectangular(stderr);
+});
+
+test('on-stop override: brackets wrap the box bars, frame intact', async () => {
+  const { stderr, code } = await runScript(ON_STOP, 'full.json', {
+    CC_USAGE_MONITOR_BRACKETS: '()',
+  });
+  assert.equal(code, 0);
+  assert.match(stderr, /\([▰▱]{12}\)/);
+  assertRectangular(stderr);
+
+  // `none` strips the brackets a preset built in, and still closes.
+  const bare = await runScript(ON_STOP, 'full.json', {
+    CC_USAGE_MONITOR_STYLE: 'bracket',
+    CC_USAGE_MONITOR_BRACKETS: 'none',
+  });
+  assert.equal(bare.code, 0);
+  assert.doesNotMatch(bare.stderr, /\[[▰▱]/);
+  assertRectangular(bare.stderr);
+});
+
+test('on-stop override: a widened, bracketed box on a preset stays rectangular', async () => {
+  const { stderr, code } = await styledBox('dots', 'full.json', {
+    CC_USAGE_MONITOR_BOX_BAR_WIDTH: '40',
+    CC_USAGE_MONITOR_BRACKETS: '「」',
+  }, withTranscript);
+  assert.equal(code, 0);
+  assert.match(stderr, /「[●○]{40}」/);
+  assertRectangular(stderr);
+});
+
+test('on-stop override: statusline-only knobs leave the box alone', async () => {
+  // sep, labels and the two suffixes are statusline concepts; the box has
+  // its own row labels and always shows its countdown.
+  const { stderr, code } = await runScript(ON_STOP, 'full.json', {
+    CC_USAGE_MONITOR_SEP: '»',
+    CC_USAGE_MONITOR_LABELS: 'ctx=context',
+    CC_USAGE_MONITOR_SHOW_RESET: '0',
+    CC_USAGE_MONITOR_CTX_DETAIL: '0',
+  });
+  assert.equal(code, 0);
+  const plain = await runScript(ON_STOP, 'full.json');
+  assert.equal(stderr, plain.stderr);
+});
+
 test('on-stop style: the config file selects the box style too', async () => {
   const path = require('node:path');
   const fs = require('node:fs');

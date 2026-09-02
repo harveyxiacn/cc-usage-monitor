@@ -3,7 +3,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { THEMES, THEME_NAMES, resolveTheme, isThemeName, themeHelp, SAMPLE_PAYLOAD } = require('../lib/theme');
+const {
+  THEMES, THEME_NAMES, resolveTheme, isThemeName, themeHelp, SAMPLE_PAYLOAD,
+  OVERRIDE_ENV, LABEL_KEYS, MAX_BAR_WIDTH, MAX_BOX_BAR_WIDTH, NO_BRACKETS,
+  parseSepOverride, parseWidthOverride, parseBracketsOverride,
+  parseBoolOverride, parseLabelsOverride,
+} = require('../lib/theme');
 
 const EXPECTED_NAMES = [
   'classic', 'minimal', 'compact', 'detailed', 'bracket',
@@ -187,4 +192,205 @@ test('resolveTheme: ascii ignores CC_USAGE_MONITOR_BAR_STYLE so its 7-bit guaran
   assert.equal(theme.bar.empty, '-');
   // Other presets still honour the override.
   assert.equal(resolveTheme({ CC_USAGE_MONITOR_STYLE: 'dots', CC_USAGE_MONITOR_BAR_STYLE: 'square' }).bar.filled, '■');
+});
+
+// --- fine-tuning overrides -----------------------------------------------
+//
+// Seven orthogonal knobs that layer on top of whichever preset is active.
+// Two rules run through all of them: an explicit override beats the preset
+// (the user typed it), and an invalid one is ignored rather than fatal (it
+// may have come from a shell profile nobody is watching).
+
+test('theme override: OVERRIDE_ENV maps the seven keys to their variables', () => {
+  assert.deepEqual(OVERRIDE_ENV, {
+    sep: 'CC_USAGE_MONITOR_SEP',
+    barWidth: 'CC_USAGE_MONITOR_BAR_WIDTH',
+    boxBarWidth: 'CC_USAGE_MONITOR_BOX_BAR_WIDTH',
+    brackets: 'CC_USAGE_MONITOR_BRACKETS',
+    showReset: 'CC_USAGE_MONITOR_SHOW_RESET',
+    showCtxDetail: 'CC_USAGE_MONITOR_CTX_DETAIL',
+    labels: 'CC_USAGE_MONITOR_LABELS',
+  });
+  // The label slots are exactly the ones every preset defines.
+  assert.deepEqual(LABEL_KEYS, ['ctx', '5h', '7d', 'cache', 'turn', 'session', 'cost', 'model']);
+  assert.deepEqual(LABEL_KEYS.slice().sort(), Object.keys(THEMES.classic.labels).sort());
+});
+
+test('theme override: sep accepts 1-3 visible characters and ignores the rest', () => {
+  assert.equal(resolveTheme({ CC_USAGE_MONITOR_SEP: '»' }).sep, '»');
+  assert.equal(resolveTheme({ CC_USAGE_MONITOR_SEP: '::' }).sep, '::');
+  assert.equal(resolveTheme({ CC_USAGE_MONITOR_STYLE: 'dots', CC_USAGE_MONITOR_SEP: ' | ' }).sep, ' | ');
+  // Too long, blank, or absent: the preset keeps its own separator.
+  for (const bad of ['', ' ', '    ', 'abcd', '||||']) {
+    assert.equal(resolveTheme({ CC_USAGE_MONITOR_SEP: bad }).sep, '│', JSON.stringify(bad));
+  }
+  assert.equal(parseSepOverride(undefined), null);
+  assert.equal(parseSepOverride(null), null);
+});
+
+test('theme override: barWidth and boxBarWidth take plain integers in range', () => {
+  const t = resolveTheme({
+    CC_USAGE_MONITOR_BAR_WIDTH: '8',
+    CC_USAGE_MONITOR_BOX_BAR_WIDTH: '16',
+  });
+  assert.equal(t.barWidth, 8);
+  assert.equal(t.boxBarWidth, 16);
+
+  // The bounds themselves are valid.
+  assert.equal(resolveTheme({ CC_USAGE_MONITOR_BAR_WIDTH: '1' }).barWidth, 1);
+  assert.equal(resolveTheme({ CC_USAGE_MONITOR_BAR_WIDTH: String(MAX_BAR_WIDTH) }).barWidth, MAX_BAR_WIDTH);
+  assert.equal(
+    resolveTheme({ CC_USAGE_MONITOR_BOX_BAR_WIDTH: String(MAX_BOX_BAR_WIDTH) }).boxBarWidth,
+    MAX_BOX_BAR_WIDTH
+  );
+
+  // Out of range, not an integer, not a number at all: the preset stands.
+  for (const bad of ['0', '21', '-3', '4.5', ' ', '', 'wide', '1e1', '08x']) {
+    assert.equal(resolveTheme({ CC_USAGE_MONITOR_BAR_WIDTH: bad }).barWidth, 5, JSON.stringify(bad));
+  }
+  for (const bad of ['0', '41', 'x']) {
+    assert.equal(resolveTheme({ CC_USAGE_MONITOR_BOX_BAR_WIDTH: bad }).boxBarWidth, 12, JSON.stringify(bad));
+  }
+  assert.equal(parseWidthOverride(undefined, MAX_BAR_WIDTH), null);
+  assert.equal(parseWidthOverride(8, MAX_BAR_WIDTH), 8); // numbers work too (config file)
+});
+
+test('theme override: brackets wrap every bar, and "none" unwraps a preset', () => {
+  assert.deepEqual(resolveTheme({ CC_USAGE_MONITOR_BRACKETS: '()' }).brackets, ['(', ')']);
+  assert.deepEqual(resolveTheme({ CC_USAGE_MONITOR_BRACKETS: '<>' }).brackets, ['<', '>']);
+  assert.deepEqual(resolveTheme({ CC_USAGE_MONITOR_BRACKETS: '{}' }).brackets, ['{', '}']);
+  // Two code points, not two UTF-16 units.
+  assert.deepEqual(resolveTheme({ CC_USAGE_MONITOR_BRACKETS: '「」' }).brackets, ['「', '」']);
+
+  // `none` strips the wrapping a preset built in, case-insensitively.
+  assert.equal(
+    resolveTheme({ CC_USAGE_MONITOR_STYLE: 'bracket', CC_USAGE_MONITOR_BRACKETS: 'none' }).brackets,
+    null
+  );
+  assert.equal(
+    resolveTheme({ CC_USAGE_MONITOR_STYLE: 'ascii', CC_USAGE_MONITOR_BRACKETS: ' NONE ' }).brackets,
+    null
+  );
+
+  // Anything else leaves the preset alone (here: bracket's own [ ]).
+  for (const bad of ['[', '[[]]', '', '   ', 'nope']) {
+    assert.deepEqual(
+      resolveTheme({ CC_USAGE_MONITOR_STYLE: 'bracket', CC_USAGE_MONITOR_BRACKETS: bad }).brackets,
+      ['[', ']'],
+      JSON.stringify(bad)
+    );
+  }
+  assert.equal(parseBracketsOverride('none'), NO_BRACKETS);
+  assert.equal(parseBracketsOverride(undefined), null);
+});
+
+test('theme override: showReset and showCtxDetail toggle both ways', () => {
+  const off = resolveTheme({
+    CC_USAGE_MONITOR_SHOW_RESET: '0',
+    CC_USAGE_MONITOR_CTX_DETAIL: 'false',
+  });
+  assert.equal(off.showReset, false);
+  assert.equal(off.showCtxDetail, false);
+
+  // minimal switches both off; an explicit override switches them back on.
+  const on = resolveTheme({
+    CC_USAGE_MONITOR_STYLE: 'minimal',
+    CC_USAGE_MONITOR_SHOW_RESET: '1',
+    CC_USAGE_MONITOR_CTX_DETAIL: 'yes',
+  });
+  assert.equal(on.showReset, true);
+  assert.equal(on.showCtxDetail, true);
+
+  // Blank means "not set", so an exported-but-empty variable changes nothing.
+  const blank = resolveTheme({ CC_USAGE_MONITOR_STYLE: 'minimal', CC_USAGE_MONITOR_SHOW_RESET: '' });
+  assert.equal(blank.showReset, false);
+  assert.equal(parseBoolOverride(undefined), null);
+  assert.equal(parseBoolOverride('FALSE'), false);
+});
+
+test('theme override: labels merge key by key, and an empty value hides one', () => {
+  const t = resolveTheme({
+    CC_USAGE_MONITOR_STYLE: 'detailed',
+    CC_USAGE_MONITOR_LABELS: 'ctx=context window,cache=',
+  });
+  assert.equal(t.labels.ctx, 'context window');
+  assert.equal(t.labels.cache, '');
+  assert.equal(t.labels['5h'], '5-hour'); // the preset's other labels survive
+
+  // Unknown keys and pairs without an `=` are skipped; the good ones apply.
+  const partial = resolveTheme({ CC_USAGE_MONITOR_LABELS: 'bogus=x,ctx=CTX,nonsense' });
+  assert.equal(partial.labels.ctx, 'CTX');
+  assert.equal(partial.labels.bogus, undefined);
+  assert.equal(partial.labels['5h'], '5h');
+
+  // Split on the FIRST '=', so a label may contain one.
+  assert.equal(resolveTheme({ CC_USAGE_MONITOR_LABELS: 'cost=$=' }).labels.cost, '$=');
+
+  // Nothing usable at all leaves every label untouched.
+  assert.deepEqual(resolveTheme({ CC_USAGE_MONITOR_LABELS: 'junk' }).labels, resolveTheme({}).labels);
+  assert.equal(parseLabelsOverride('bogus=x'), null);
+});
+
+test('theme override: minimal ignores bar geometry but honours everything else', () => {
+  const t = resolveTheme({
+    CC_USAGE_MONITOR_STYLE: 'minimal',
+    CC_USAGE_MONITOR_BAR_WIDTH: '8',
+    CC_USAGE_MONITOR_BOX_BAR_WIDTH: '16',
+    CC_USAGE_MONITOR_BRACKETS: '()',
+    CC_USAGE_MONITOR_SEP: '»',
+    CC_USAGE_MONITOR_LABELS: 'ctx=context',
+  });
+  // An override fine-tunes a bar; it never brings one back.
+  assert.equal(t.bar, null);
+  assert.equal(t.barWidth, 5);
+  assert.equal(t.boxBarWidth, 12);
+  assert.equal(t.brackets, null);
+  // The knobs that have nothing to do with bars still apply.
+  assert.equal(t.sep, '»');
+  assert.equal(t.labels.ctx, 'context');
+});
+
+test('theme override: ascii keeps its locked # bars yet takes every other knob', () => {
+  const t = resolveTheme({
+    CC_USAGE_MONITOR_STYLE: 'ascii',
+    CC_USAGE_MONITOR_BAR_STYLE: 'square',
+    CC_USAGE_MONITOR_SEP: '»',
+    CC_USAGE_MONITOR_BAR_WIDTH: '8',
+    CC_USAGE_MONITOR_BRACKETS: '<>',
+  });
+  assert.equal(t.bar.filled, '#'); // lockBar still wins over barStyle
+  assert.equal(t.bar.empty, '-');
+  assert.equal(t.sep, '»');
+  assert.equal(t.barWidth, 8);
+  assert.deepEqual(t.brackets, ['<', '>']);
+});
+
+test('theme override: an all-blank environment leaves every preset untouched', () => {
+  const blank = {
+    CC_USAGE_MONITOR_SEP: '',
+    CC_USAGE_MONITOR_BAR_WIDTH: '',
+    CC_USAGE_MONITOR_BOX_BAR_WIDTH: '',
+    CC_USAGE_MONITOR_BRACKETS: '',
+    CC_USAGE_MONITOR_SHOW_RESET: '',
+    CC_USAGE_MONITOR_CTX_DETAIL: '',
+    CC_USAGE_MONITOR_LABELS: '',
+  };
+  for (const name of THEME_NAMES) {
+    assert.deepEqual(
+      resolveTheme({ CC_USAGE_MONITOR_STYLE: name, ...blank }),
+      resolveTheme({ CC_USAGE_MONITOR_STYLE: name }),
+      name
+    );
+  }
+});
+
+test('theme override: overriding one resolve cannot leak into the next', () => {
+  const first = resolveTheme({ CC_USAGE_MONITOR_LABELS: 'ctx=context', CC_USAGE_MONITOR_SEP: '»' });
+  assert.equal(first.labels.ctx, 'context');
+  const second = resolveTheme({});
+  assert.equal(second.labels.ctx, 'ctx');
+  assert.equal(second.sep, '│');
+  // The shared preset objects themselves are still pristine.
+  assert.equal(THEMES.classic.labels.ctx, 'ctx');
+  assert.equal(THEMES.classic.sep, '│');
 });
